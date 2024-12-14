@@ -1,3 +1,24 @@
 Add content
 transition: width 0.3s ease-in-out;
   overflow: hidden;
+
+
+
+.icon-container {
+  background-color: blue;
+  width: 70px;
+  height: 70px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.3s;
+}
+
+.icon-img {
+  filter: brightness(0) invert(0); /* Default color: black */
+  transition: filter 0.3s;
+}
+
+.icon-container:hover .icon-img {
+  filter: brightness(0) invert(1); /* White on hover */
+}
