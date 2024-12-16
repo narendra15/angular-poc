@@ -1,0 +1,66 @@
+<div class="search-bar">
+  <input
+    type="text"
+    [(ngModel)]="searchTerm"
+    placeholder="Search..."
+    (input)="onSearch()"
+    class="search-input"
+  />
+</div>
+
+
+
+import { Component, EventEmitter, Output } from '@angular/core';
+
+@Component({
+  selector: 'app-search-bar',
+  templateUrl: './search-bar.component.html',
+  styleUrls: ['./search-bar.component.scss'],
+})
+export class SearchBarComponent {
+  searchTerm: string = '';
+
+  // Emit search input to parent component
+  @Output() searchEvent = new EventEmitter<string>();
+
+  onSearch(): void {
+    this.searchEvent.emit(this.searchTerm);
+  }
+}
+
+//// Activity tracker
+
+ <app-search-bar (searchEvent)="onSearch($event)"></app-search-bar>
+
+
+
+ import { Component, OnInit } from '@angular/core';
+
+@Component({
+  selector: 'app-activity-tracker',
+  templateUrl: './activity-tracker.component.html',
+  styleUrls: ['./activity-tracker.component.scss'],
+})
+export class ActivityTrackerComponent implements OnInit {
+  activities: any[] = [];
+  filteredActivities: any[] = [];
+
+  ngOnInit(): void {
+    // Mock API data
+    this.activities = [
+      { dateTime: '2025-04-03 15:35:01', templateName: 'SVR057', version: '1', activity: 'Re-assigned to Andrew Bernard' },
+      { dateTime: '2025-04-02 10:30:07', templateName: 'SVR055', version: '1', activity: 'Submitted to Reviewer - Ken Louis' },
+      { dateTime: '2025-04-02 09:50:32', templateName: 'SVR056', version: '1', activity: 'Notes Added' },
+    ];
+
+    this.filteredActivities = [...this.activities];
+  }
+
+  onSearch(searchTerm: string): void {
+    this.filteredActivities = this.activities.filter((activity) =>
+      Object.values(activity).some((value) =>
+        value.toString().toLowerCase().includes(searchTerm.toLowerCase())
+      )
+    );
+  }
+}
