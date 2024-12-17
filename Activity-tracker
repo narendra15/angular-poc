@@ -1,0 +1,102 @@
+prep-activity-tracker.service.ts
+///////////////////////////////////////////
+
+import { Injectable } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { Observable } from 'rxjs';
+import { map } from 'rxjs/operators';
+
+export interface ActivityTracker {
+  dateTime: string;
+  templateName: string;
+  version: number;
+  activity: string;
+  user: string;
+}
+
+@Injectable({
+  providedIn: 'root',
+})
+export class PrepActivityTrackerService {
+  private apiUrl = 'YOUR_API_URL_HERE'; // Replace with actual API endpoint
+
+  constructor(private http: HttpClient) {}
+
+  getActivityData(): Observable<ActivityTracker[]> {
+    return this.http.get<any[]>(this.apiUrl).pipe(
+      map((response) =>
+        response.map((item) => ({
+          dateTime: this.formatDate(item.wt_yyyymmdd),
+          templateName: item.wt_template_id,
+                   version: item.wt_uid, // Using wt_uid as version (adjust if needed)
+          activity: item.wt_status + (item.wt_notes ? ` - ${item.wt_notes}` : ''),
+          user: item.wt_from_user || '',
+        }))
+      )
+    );
+  }
+
+  private formatDate(yyyymmdd: string): string {
+    // Convert '20241130' to 'November 30, 2024'
+    const year = yyyymmdd.substring(0, 4);
+    const month = yyyymmdd.substring(4, 6);
+    const day = yyyymmdd.substring(6, 8);
+    return new Date(`${year}-${month}-${day}`).toDateString();
+  }
+}
+
+
+prep-activity-tracker.component.ts
+/////////////////////////////////////////
+
+import { Component, OnInit } from '@angular/core';
+import { PrepActivityTrackerService, ActivityTracker } from '../services/prep-activity-tracker.service';
+
+@Component({
+  selector: 'app-prep-activity-tracker',
+  standalone: true,
+  templateUrl: './prep-activity-tracker.component.html',
+  styleUrl: './prep-activity-tracker.component.scss',
+  imports: [],
+})
+export class PrepActivityTrackerComponent implements OnInit {
+  displayedColumns: string[] = ['dateTime', 'templateName', 'version', 'activity', 'user'];
+  dataSource: ActivityTracker[] = [];
+  searchCustomClass = 'm-1-auto';
+
+  constructor(private prepService: PrepActivityTrackerService) {}
+
+  ngOnInit(): void {
+    this.fetchData();
+  }
+
+  fetchData(): void {
+    this.prepService.getActivityData().subscribe((data) => {
+      this.dataSource = data;
+    });
+  }
+
+  onSearch(searchTerm: string): void {
+    this.prepService.getActivityData().subscribe((data) => {
+      this.dataSource = data.filter((item) =>
+        Object.values(item).some((value) =>
+          value.toString().toLowerCase().includes(searchTerm.toLowerCase())
+        )
+      );
+    });
+  }
+}
+
+
+
+main.ts
+/////////////
+import { bootstrapApplication } from '@angular/platform-browser';
+import { provideHttpClient } from '@angular/common/http';
+import { importProvidersFrom } from '@angular/core';
+import { PrepActivityTrackerComponent } from './app/components/prep-activity-tracker.component';
+
+bootstrapApplication(PrepActivityTrackerComponent, {
+  providers: [provideHttpClient()],
+}).catch((err) => console.error(err));
+
