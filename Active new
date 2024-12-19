@@ -1,0 +1,41 @@
+private mapActivityTracker(item: any): ActivityTracker {
+  const roleMap: Record<string, string> = { P: 'Preparer', R: 'Reviewer', A: 'Attestor' };
+
+  // Type casting wt_to_role and wt_from_role
+  const toRole = item.wt_to_role && roleMap[item.wt_to_role as 'P' | 'R' | 'A'] ? roleMap[item.wt_to_role] : '';
+  const fromRole = item.wt_from_role && roleMap[item.wt_from_role as 'P' | 'R' | 'A'] ? roleMap[item.wt_from_role] : '';
+
+  if (item.wt_status === 'assign') {
+    return {
+      dateTime: this.formatDate(item.wt_yyyymmdd),
+      templateName: item.wt_template_id,
+      closeType: item.wt_close_type,
+      activity: `Assigned to ${toRole}`,
+      user: item.wt_to_user || '',
+    };
+  } else if (item.wt_status === 'email') {
+    return {
+      dateTime: this.formatDate(item.wt_yyyymmdd),
+      templateName: item.wt_template_id,
+      closeType: item.wt_close_type,
+      activity: `Email from ${fromRole}`,
+      user: item.wt_from_user || '',
+    };
+  } else if (item.wt_status === 'notes') {
+    return {
+      dateTime: this.formatDate(item.wt_yyyymmdd),
+      templateName: item.wt_template_id,
+      closeType: item.wt_close_type,
+      activity: 'Notes',
+      user: item.wt_from_user || '',
+    };
+  } else {
+    return {
+      dateTime: this.formatDate(item.wt_yyyymmdd),
+      templateName: item.wt_template_id,
+      closeType: item.wt_close_type,
+      activity: item.wt_status || '',
+      user: item.wt_from_user || '',
+    };
+  }
+}
