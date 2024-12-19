@@ -1,0 +1,88 @@
+import { Injectable } from '@angular/core';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
+import { Observable, throwError } from 'rxjs';
+import { map, catchError } from 'rxjs/operators';
+
+export interface ActivityTracker {
+  dateTime: string;
+  templateName: string;
+  closeType: string;
+  activity: string;
+  user: string;
+}
+
+@Injectable({
+  providedIn: 'root',
+})
+export class PrepActivityTrackerService {
+  private apiUrl = 'YOUR_API_URL_HERE'; // Replace with actual API endpoint
+
+  constructor(private http: HttpClient) {}
+
+  getActivityData(): Observable<ActivityTracker[]> {
+    return this.http.get<any[]>(this.apiUrl).pipe(
+      map((response) =>
+        response.map((item) => this.mapActivityTracker(item))
+      ),
+      catchError(this.handleError)
+    );
+  }
+
+  private mapActivityTracker(item: any): ActivityTracker {
+    const roleMap = { P: 'Preparer', R: 'Reviewer', A: 'Attestor' };
+    const toRole = item.wt_to_role ? roleMap[item.wt_to_role] : '';
+    const fromRole = item.wt_from_role ? roleMap[item.wt_from_role] : '';
+
+    if (item.wt_status === 'assign') {
+      return {
+        dateTime: this.formatDate(item.wt_yyyymmdd),
+        templateName: item.wt_template_id,
+        closeType: item.wt_close_type,
+        activity: `Assigned to ${toRole}`,
+        user: item.wt_to_user || '',
+      };
+    } else if (item.wt_status === 'email') {
+      return {
+        dateTime: this.formatDate(item.wt_yyyymmdd),
+        templateName: item.wt_template_id,
+        closeType: item.wt_close_type,
+        activity: `Email from ${fromRole}`,
+        user: item.wt_from_user || '',
+      };
+    } else if (item.wt_status === 'notes') {
+      return {
+        dateTime: this.formatDate(item.wt_yyyymmdd),
+        templateName: item.wt_template_id,
+        closeType: item.wt_close_type,
+        activity: 'Notes',
+        user: item.wt_from_user || '',
+      };
+    } else {
+      return {
+        dateTime: this.formatDate(item.wt_yyyymmdd),
+        templateName: item.wt_template_id,
+        closeType: item.wt_close_type,
+        activity: item.wt_status || '',
+        user: item.wt_from_user || '',
+      };
+    }
+  }
+
+  private formatDate(yyyymmdd: string): string {
+    const year = yyyymmdd.substring(0, 4);
+    const month = yyyymmdd.substring(4, 6);
+    const day = yyyymmdd.substring(6, 8);
+    return new Date(`${year}-${month}-${day}`).toDateString();
+  }
+
+  private handleError(error: HttpErrorResponse) {
+    let errorMsg = 'An unknown error occurred!';
+    if (error.error instanceof ErrorEvent) {
+      errorMsg = `Client Error: ${error.error.message}`;
+    } else {
+      errorMsg = `Server Error: ${error.status} - ${error.message}`;
+    }
+    console.error('Error fetching data:', errorMsg);
+    return throwError(() => new Error(errorMsg));
+  }
+}
