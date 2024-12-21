@@ -1,0 +1,49 @@
+import { Component, OnInit } from '@angular/core';
+import { PrepNotesService, Notes } from '../shared/services/prep-notes.service';
+
+@Component({
+  selector: 'app-prep-notes',
+  standalone: true,
+  templateUrl: './prep-notes.component.html',
+  styleUrls: ['./prep-notes.component.scss']
+})
+export class PrepNotesComponent implements OnInit {
+  dataSource: Notes[] = []; // All data fetched from the service
+  filteredDataSource: Notes[] = []; // Data filtered based on the dropdown
+  uniqueTemplateNames: string[] = []; // Unique template names for the dropdown
+  selectedTemplateName: string = ''; // Dropdown selected template name
+
+  constructor(private prepNotesService: PrepNotesService) {}
+
+  ngOnInit(): void {
+    this.fetchData();
+  }
+
+  fetchData(): void {
+    this.prepNotesService.getActivityData().subscribe((data) => {
+      this.dataSource = data;
+      this.uniqueTemplateNames = this.getUniqueTemplateNames(data); // Extract unique template names
+    });
+  }
+
+  /**
+   * Filter data based on the selected template name
+   */
+  filterData(): void {
+    if (this.selectedTemplateName) {
+      this.filteredDataSource = this.dataSource.filter(
+        (note) => note.templateName === this.selectedTemplateName
+      );
+    } else {
+      this.filteredDataSource = []; // Clear data if no template is selected
+    }
+  }
+
+  /**
+   * Extract unique template names from the data
+   */
+  private getUniqueTemplateNames(data: Notes[]): string[] {
+    const templateNames = data.map((note) => note.templateName);
+    return Array.from(new Set(templateNames)); // Remove duplicates
+  }
+}
