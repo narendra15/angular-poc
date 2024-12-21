@@ -1,0 +1,145 @@
+import { Injectable } from '@angular/core';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
+import { Observable, throwError } from 'rxjs';
+import { map, catchError } from 'rxjs/operators';
+
+export interface Notes {
+  datetime: string;
+  templateName: string;
+  closeType: string;
+  activity: string;
+  users: string;
+  notes: string;
+  assignTo: string;
+  statusType: string;
+}
+
+enum Status {
+  ASSIGN = 'assign',
+  EMAIL = 'email',
+  NOTES = 'notes',
+  OVERRIDE = 'override',
+  UPLOAD = 'upload',
+}
+
+@Injectable({
+  providedIn: 'root',
+})
+export class PrepNotesService {
+  private apiUrl = 'http://rdhn-srr-vos-nlb-ca1-shb01-v1-feef7380c17e134a.elb.ca-central-1.amazonaws.com/api/aurora/';
+
+  constructor(private http: HttpClient) {}
+
+  getActivityData(): Observable<Notes[]> {
+    return this.http.get<any[]>(this.apiUrl).pipe(
+      map((response) => response.map((item) => this.mapNotes(item))),
+      catchError(this.handleError)
+    );
+  }
+
+  private mapNotes(item: any): Notes {
+    const roleMap: Record<string, string> = { P: 'Preparer', R: 'Reviewer', A: 'Attestor' };
+
+    const toRole = this.mapRole(item.wt_to_role, roleMap);
+    const fromRole = this.mapRole(item.wt_from_role, roleMap);
+
+    return {
+      datetime: this.formatDateTime(item.wt_ts),
+      templateName: item.wt_template_id,
+      closeType: item.wt_close_type,
+      activity: this.mapActivity(item.wt_status, toRole, fromRole),
+      users: this.mapUsers(item, item.wt_status, toRole, fromRole),
+      notes: item.wt_notes || '',
+      assignTo: this.mapAssignInfo(item.wt_status, toRole, fromRole),
+      statusType: this.getStatusType(toRole, fromRole),
+    };
+  }
+
+  private mapRole(role: string, roleMap: Record<string, string>): string {
+    return roleMap[role as keyof typeof roleMap] || '';
+  }
+
+  private formatDateTime(timestamp: string): string {
+    const date = new Date(timestamp);
+    return `${date.toLocaleString('en-US', {
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      timeZone: 'America/New_York',
+      hour12: false,
+    })} EST`;
+  }
+
+  private mapActivity(status: string, toRole: string, fromRole: string): string {
+    if (status === Status.ASSIGN) {
+      if (this.isSubmittedForChanges(fromRole, toRole)) {
+        return `${fromRole} Submitted to ${toRole} for changes`;
+      }
+      if (this.isReassignedForChanges(fromRole, toRole)) {
+        return `${fromRole} Re-assigned to ${toRole} for changes`;
+      }
+    }
+    const statusMap: Record<string, string> = {
+      [Status.EMAIL]: 'Email to Reviewer',
+      [Status.NOTES]: 'Notes added',
+      [Status.OVERRIDE]: 'Overrided by preparer',
+      [Status.UPLOAD]: 'Uploaded',
+    };
+    return statusMap[status] || status || '';
+  }
+
+  private mapUsers(item: any, status: string, toRole: string, fromRole: string): string {
+    if (status === Status.ASSIGN) {
+      if (this.isSubmittedForChanges(fromRole, toRole)) {
+        return item.wt_to_user || ''; // Use "to-user" for submitted status
+      }
+      if (this.isReassignedForChanges(fromRole, toRole)) {
+        return item.wt_from_user || ''; // Use "from-user" for reassigned status
+      }
+    }
+    return item.wt_from_user || ''; // Default to "from-user" for all other cases
+  }
+
+  private mapAssignInfo(status: string, toRole: string, fromRole: string): string {
+    if (status === Status.ASSIGN) {
+      return `Assigned to ${toRole}`;
+    }
+    const assignMap: Record<string, string> = {
+      [Status.EMAIL]: 'Email to Reviewer',
+      [Status.NOTES]: 'Notes',
+      [Status.OVERRIDE]: 'Overrided',
+      [Status.UPLOAD]: 'Uploaded',
+    };
+    return assignMap[status] || status || '';
+  }
+
+  private getStatusType(toRole: string, fromRole: string): string {
+    return (fromRole === 'Reviewer' && toRole === 'Preparer') ||
+      (fromRole === 'Attestor' && (toRole === 'Reviewer' || toRole === 'Preparer'))
+      ? 'amber'
+      : 'green';
+  }
+
+  private isSubmittedForChanges(fromRole: string, toRole: string): boolean {
+    return (fromRole === 'Preparer' && toRole === 'Reviewer') || (fromRole === 'Reviewer' && toRole === 'Attestor');
+  }
+
+  private isReassignedForChanges(fromRole: string, toRole: string): boolean {
+    return (
+      (fromRole === 'Reviewer' && toRole === 'Preparer') ||
+      (fromRole === 'Attestor' && (toRole === 'Reviewer' || toRole === 'Preparer'))
+    );
+  }
+
+  private handleError(error: HttpErrorResponse) {
+    const errorMsg =
+      error.error instanceof ErrorEvent
+        ? `Client Error: ${error.error.message}`
+        : `Server Error: ${error.status} - ${error.message}`;
+    console.error('Error fetching data:', errorMsg);
+    return throwError(() => new Error(errorMsg));
+  }
+}
