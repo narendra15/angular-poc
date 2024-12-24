@@ -1,0 +1,17 @@
+// Define the multiplier
+$multiplier: 7;
+
+// Generate dynamic margin classes
+@mixin generate-margin($property, $class-prefix) {
+  @for $i from 1 through 3 {
+    .#{$class-prefix}-#{$i}x {
+      #{$property}: $i * $multiplier + px;
+    }
+  }
+}
+
+// Generate margin classes
+@include generate-margin(margin-left, ml);
+@include generate-margin(margin-right, mr);
+@include generate-margin(margin-top, mt);
+@include generate-margin(margin-bottom, mb);
