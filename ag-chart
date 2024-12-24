@@ -1,0 +1,45 @@
+import { Component } from '@angular/core';
+import { AgChartsAngularModule } from 'ag-charts-angular';
+import { CommonModule } from '@angular/common';
+
+@Component({
+  selector: 'app-pie-chart',
+  standalone: true,
+  imports: [CommonModule, AgChartsAngularModule], // Import AgChartsAngularModule here
+  template: `<ag-charts-angular [options]="options"></ag-charts-angular>`,
+  styles: [
+    `
+      ag-charts-angular {
+        display: block;
+        width: 100%;
+        height: 500px;
+      }
+    `,
+  ],
+})
+export class PieChartComponent {
+  options = {
+    autoSize: true,
+    title: {
+      text: 'Market Share of Ice Cream Flavors',
+      fontSize: 18,
+    },
+    data: [
+      { flavor: 'Vanilla', share: 35 },
+      { flavor: 'Chocolate', share: 30 },
+      { flavor: 'Strawberry', share: 20 },
+      { flavor: 'Mint', share: 15 },
+    ],
+    series: [
+      {
+        type: 'pie',
+        angleKey: 'share',
+        labelKey: 'flavor',
+        innerRadiusOffset: -50, // For a donut chart, adjust this value
+      },
+    ],
+    legend: {
+      position: 'bottom',
+    },
+  };
+}
