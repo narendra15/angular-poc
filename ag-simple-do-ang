@@ -1,0 +1,70 @@
+import { Component, OnInit } from '@angular/core';
+import { AgChartsAngular } from 'ag-charts-angular';
+
+@Component({
+  selector: 'app-dwelling-fires-chart',
+  templateUrl: './dwelling-fires-chart.component.html',
+  styleUrls: ['./dwelling-fires-chart.component.css']
+})
+export class DwellingFiresChartComponent implements OnInit {
+  options: any;
+
+  constructor() {}
+
+  ngOnInit(): void {
+    const data = this.getData();
+    const numFormatter = new Intl.NumberFormat('en-US');
+    const total = data.reduce((sum, d) => sum + d['count'], 0);
+
+    this.options = {
+      data,
+      title: {
+        text: 'Dwelling Fires (UK)',
+      },
+      footnote: {
+        text: 'Source: Home Office',
+      },
+      series: [
+        {
+          type: 'donut',
+          calloutLabelKey: 'type',
+          angleKey: 'count',
+          sectorLabelKey: 'count',
+          calloutLabel: {
+            enabled: false,
+          },
+          sectorLabel: {
+            formatter: ({ datum, sectorLabelKey }: any) => {
+              const value = datum[sectorLabelKey];
+              return numFormatter.format(value);
+            },
+          },
+          title: {
+            text: 'Annual Count',
+          },
+          innerRadiusRatio: 0.7,
+          innerLabels: [
+            {
+              text: numFormatter.format(total),
+              fontSize: 24,
+            },
+            {
+              text: 'Total',
+              fontSize: 16,
+              spacing: 10,
+            },
+          ],
+          sectorSpacing: 3,
+        },
+      ],
+    };
+  }
+
+  getData() {
+    return [
+      { type: 'Residential', count: 300 },
+      { type: 'Commercial', count: 120 },
+      { type: 'Other', count: 80 },
+    ]; // Replace with your actual data source
+  }
+}
