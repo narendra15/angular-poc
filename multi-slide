@@ -1,0 +1,123 @@
+<div class="carousel">
+  <button mat-button class="nav-btn left" (click)="prev()">&#8249;</button>
+  <div class="carousel-slide-container">
+    <div
+      class="carousel-slides"
+      [style.transform]="'translateX(-' + currentSlideIndex * 100 + '%)'"
+    >
+      <div class="carousel-slide" *ngFor="let slide of slides">
+        <img [src]="slide.image" alt="Slide">
+      </div>
+    </div>
+  </div>
+  <button mat-button class="nav-btn right" (click)="next()">&#8250;</button>
+</div>
+
+
+//////////////
+
+@Input() slides: { image: string }[] = [];
+  currentSlideIndex = 0;
+
+  prev() {
+    this.currentSlideIndex =
+      (this.currentSlideIndex - 1 + this.slides.length) % this.slides.length;
+  }
+
+  next() {
+    this.currentSlideIndex =
+      (this.currentSlideIndex + 1) % this.slides.length;
+  }
+
+
+
+/////////////////////
+
+.carousel {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  max-width: 800px;
+  margin: auto;
+}
+
+.carousel-slide-container {
+  overflow: hidden;
+  width: 100%;
+}
+
+.carousel-slides {
+  display: flex;
+  transition: transform 0.5s ease-in-out; /* Smooth slide effect */
+}
+
+.carousel-slide {
+  min-width: 100%; /* Each slide takes full width */
+  text-align: center;
+}
+
+.carousel-slide img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.nav-btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(0, 0, 0, 0.5);
+  color: white;
+  border: none;
+  cursor: pointer;
+  z-index: 10;
+}
+
+.nav-btn.left {
+  left: 10px;
+}
+
+.nav-btn.right {
+  right: 10px;
+}
+
+/////////////// main ////////
+
+
+<div class="section">
+  <h2>Section 1</h2>
+  <app-carousel [slides]="section1Slides"></app-carousel>
+</div>
+
+<div class="section">
+  <h2>Section 2</h2>
+  <app-carousel [slides]="section2Slides"></app-carousel>
+</div>
+
+<div class="section">
+  <h2>Section 3</h2>
+  <app-carousel [slides]="section3Slides"></app-carousel>
+</div>
+
+
+////////////// main ts /////////////////
+
+section1Slides = [
+    { image: 'assets/slide1.jpg' },
+    { image: 'assets/slide2.jpg' },
+    { image: 'assets/slide3.jpg' }
+  ];
+
+  section2Slides = [
+    { image: 'assets/slide4.jpg' },
+    { image: 'assets/slide5.jpg' },
+    { image: 'assets/slide6.jpg' }
+  ];
+
+  section3Slides = [
+    { image: 'assets/slide7.jpg' },
+    { image: 'assets/slide8.jpg' },
+    { image: 'assets/slide9.jpg' }
+  ];
+
+
