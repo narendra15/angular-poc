@@ -1,0 +1,169 @@
+<div class="slider">
+  <button class="nav-btn left" (click)="prev()">&#8249;</button>
+  <div class="slider-content">
+    <div
+      class="slides"
+      [style.transform]="'translateX(-' + currentSlideIndex * 100 + '%)'"
+    >
+      <!-- Project custom content into each slide -->
+      <ng-content></ng-content>
+    </div>
+  </div>
+  <button class="nav-btn right" (click)="next()">&#8250;</button>
+</div>
+
+
+////////////////// TS ////////////////
+
+import { Component, Input } from '@angular/core';
+
+@Component({
+  selector: 'app-slider',
+  templateUrl: './slider.component.html',
+  styleUrls: ['./slider.component.css']
+})
+export class SliderComponent {
+  @Input() data: any[] = [];
+  @Input() config: any = {};
+  currentSlideIndex = 0;
+
+  prev() {
+    this.currentSlideIndex =
+      (this.currentSlideIndex - 1 + this.data.length) % this.data.length;
+  }
+
+  next() {
+    this.currentSlideIndex =
+      (this.currentSlideIndex + 1) % this.data.length;
+  }
+}
+
+
+
+///// CSS ///////////
+
+.slider {
+  position: relative;
+  width: 100%;
+  max-width: 800px;
+  margin: 20px auto;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.slider-content {
+  overflow: hidden;
+  width: 100%;
+}
+
+.slides {
+  display: flex;
+  transition: transform 0.5s ease-in-out;
+}
+
+.nav-btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(0, 0, 0, 0.5);
+  color: white;
+  border: none;
+  cursor: pointer;
+}
+
+.nav-btn.left {
+  left: 10px;
+}
+
+.nav-btn.right {
+  right: 10px;
+}
+
+//////////////////////////////////////////////////////////////////
+
+
+/////////// Parent /////////////
+
+
+
+<h2>Re-Assigned</h2>
+<app-slider [data]="reAssignedData" [config]="reAssignedConfig">
+  <div *ngFor="let item of reAssignedData" class="slide">
+    <h4>Template: {{ item.template }}</h4>
+    <p>{{ item.comments }}</p>
+    <p><strong>Re-assigned By:</strong> {{ item.reAssignedBy }}</p>
+  </div>
+</app-slider>
+
+<h2>Submitted</h2>
+<app-slider [data]="submittedData" [config]="submittedConfig">
+  <div *ngFor="let item of submittedData" class="slide">
+    <h4>Template: {{ item.template }}</h4>
+    <div class="progress">
+      <span *ngFor="let step of item.status">{{ step }}</span>
+    </div>
+  </div>
+</app-slider>
+
+<h2>Completed</h2>
+<app-slider [data]="completedData" [config]="completedConfig">
+  <div *ngFor="let item of completedData" class="slide">
+    <h4>Template: {{ item.template }}</h4>
+    <p>Submitted: {{ item.submitted }}</p>
+    <p>Completed: {{ item.completed }}</p>
+  </div>
+</app-slider>
+
+
+////////////////// TS //////////////////////
+
+
+reAssignedData = [
+    {
+      template: 'SV0494',
+      comments: 'Agreed with you. Change the product code.',
+      reAssignedBy: 'Reviewer'
+    },
+    {
+      template: 'SV0495',
+      comments: 'Adjust the values and re-submit.',
+      reAssignedBy: 'Admin'
+    }
+  ];
+
+  reAssignedConfig = {
+    type: 'reassigned'
+  };
+
+  submittedData = [
+    {
+      template: 'SV0495',
+      status: ['VOS Captured', 'Submitted for Review', 'Submitted for Attestation']
+    },
+    {
+      template: 'SV0496',
+      status: ['VOS Captured', 'Pending for Sign-off']
+    }
+  ];
+
+  submittedConfig = {
+    type: 'submitted'
+  };
+
+  completedData = [
+    {
+      template: 'SV0496',
+      submitted: 'Apr 3, 2025 12:34:57 EST',
+      completed: 'Apr 4, 2025 12:25:43 EST'
+    },
+    {
+      template: 'SV0497',
+      submitted: 'Apr 5, 2025 10:34:56 EST',
+      completed: 'Apr 6, 2025 11:55:12 EST'
+    }
+  ];
+
+  completedConfig = {
+    type: 'completed'
+  };
