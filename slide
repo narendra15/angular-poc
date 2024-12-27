@@ -1,0 +1,49 @@
+<div class="carousel-container">
+  <button mat-button class="nav-btn left" (click)="prev()">&#8249;</button>
+  <div class="carousel-slide-container">
+    <div
+      class="carousel-slides"
+      [style.transform]="'translateX(-' + currentSlideIndex * 100 + '%)'"
+    >
+      <div class="carousel-slide" *ngFor="let slide of slides">
+        <span>{{slide.text}}</span>
+      </div>
+    </div>
+  </div>
+  <button mat-button class="nav-btn right" (click)="next()">&#8250;</button>
+</div>
+///////////////////////
+
+slides = [
+    { text: 'Slide 1' },
+    { text: 'Slide 2' },
+    { text: 'Slide 3' }
+  ];
+  currentSlideIndex = 0;
+
+  prev() {
+    this.currentSlideIndex =
+      (this.currentSlideIndex - 1 + this.slides.length) % this.slides.length;
+  }
+
+  next() {
+    this.currentSlideIndex = (this.currentSlideIndex + 1) % this.slides.length;
+  }
+
+
+  ///////////////////////
+
+  <div class="carousel-container">
+  <button mat-button class="nav-btn left" (click)="prev()">&#8249;</button>
+  <div class="carousel-slide-container">
+    <div
+      class="carousel-slides"
+      [style.transform]="'translateX(-' + currentSlideIndex * 100 + '%)'"
+    >
+      <div class="carousel-slide" *ngFor="let slide of slides">
+        <span>{{slide.text}}</span>
+      </div>
+    </div>
+  </div>
+  <button mat-button class="nav-btn right" (click)="next()">&#8250;</button>
+</div>
