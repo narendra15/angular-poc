@@ -1,0 +1,55 @@
+/* Hide the default checkbox */
+.custom-label .custom-checkbox {
+  position: absolute;
+  opacity: 0;
+  cursor: pointer;
+}
+
+/* Style the label to act as the custom checkbox container */
+.custom-label {
+  position: relative;
+  padding-left: 30px; /* Space for the custom checkbox */
+  cursor: pointer;
+  font-size: 16px;
+  user-select: none;
+}
+
+/* Custom checkbox styling */
+.custom-label::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 20px;
+  border: 2px solid gray;
+  border-radius: 4px; /* Rounded corners */
+  background-color: white;
+  transition: 0.3s;
+}
+
+/* Custom checkbox when checked */
+.custom-label .custom-checkbox:checked + label::before {
+  border-color: blue;
+  background-color: blue;
+}
+
+/* Checkmark styling */
+.custom-label::after {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: 50%;
+  transform: translateY(-50%) scale(0);
+  width: 8px;
+  height: 8px;
+  background: white;
+  border-radius: 2px;
+  transition: transform 0.3s ease;
+}
+
+/* Checkmark appears when checkbox is checked */
+.custom-label .custom-checkbox:checked + label::after {
+  transform: scale(1);
+}
