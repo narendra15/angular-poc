@@ -1,0 +1,35 @@
+import { Injectable } from '@angular/core';
+
+@Injectable({
+  providedIn: 'root',
+})
+export class DateService {
+  constructor() {}
+
+  /**
+   * Get the current date in the format "April 3, 2025".
+   */
+  getCurrentDateFormatted(): string {
+    const date = new Date();
+    return date.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+  }
+}
+
+
+/////////////////////////////////
+
+currentDate: string = '';
+
+  constructor(private dateService: DateService) {}
+
+  ngOnInit(): void {
+    this.currentDate = this.dateService.getCurrentDateFormatted();
+  }
+
+/////////////////////////
+
+<p>Today's date is: {{ currentDate }}</p>
