@@ -1,0 +1,58 @@
+.toggle-container {
+  display: inline-block;
+  position: relative;
+  font-family: Arial, sans-serif;
+}
+
+.toggle-checkbox {
+  display: none; /* Hide the checkbox */
+}
+
+.toggle-label {
+  display: inline-flex;
+  align-items: center;
+  border: 2px solid #ccc;
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  padding: 10px 20px;
+  background-color: #f4f4f4;
+  color: #333;
+  font-weight: bold;
+  text-align: center;
+  width: 200px; /* Adjust width as needed */
+  justify-content: center;
+}
+
+.toggle-label .soft-close {
+  display: inline-block;
+}
+
+.toggle-label .hard-close {
+  display: none;
+}
+
+.toggle-checkbox:checked + .toggle-label {
+  background-color: #d97706; /* Orange for the active state */
+  color: #fff;
+}
+
+.toggle-checkbox:checked + .toggle-label .soft-close {
+  display: none; /* Hide Soft Close text */
+}
+
+.toggle-checkbox:checked + .toggle-label .hard-close {
+  display: inline-block; /* Show Hard Close text */
+}
+/////////////////////////
+
+
+
+<div class="toggle-container">
+  <input type="checkbox" id="toggle" class="toggle-checkbox">
+  <label for="toggle" class="toggle-label">
+    <span class="soft-close">SOFT CLOSE</span>
+    <span class="hard-close">HARD CLOSE</span>
+  </label>
+</div>
