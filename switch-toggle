@@ -56,3 +56,73 @@
     <span class="hard-close">HARD CLOSE</span>
   </label>
 </div>
+
+
+
+
+////////////// v2//////////////////
+
+<div class="toggle-container">
+  <input type="checkbox" id="toggle" class="toggle-checkbox">
+  <label for="toggle" class="toggle-label">
+    <span class="toggle-option soft-close">SOFT CLOSE</span>
+    <span class="toggle-option hard-close">HARD CLOSE</span>
+  </label>
+</div>
+
+
+///////////////
+.toggle-container {
+  display: inline-block;
+  position: relative;
+}
+
+.toggle-checkbox {
+  display: none; /* Hide the checkbox */
+}
+
+.toggle-label {
+  display: inline-flex;
+  justify-content: space-between;
+  align-items: center;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  background-color: #f9f9f9;
+  cursor: pointer;
+  width: 200px; /* Adjust width as needed */
+  height: 40px; /* Adjust height as needed */
+  position: relative;
+  overflow: hidden;
+}
+
+.toggle-option {
+  flex: 1;
+  text-align: center;
+  font-family: Arial, sans-serif;
+  font-size: 14px;
+  line-height: 40px; /* Match height */
+  font-weight: bold;
+  transition: all 0.3s ease;
+  color: #333;
+  background-color: #fff;
+}
+
+.soft-close {
+  background-color: #d3d3d3;
+}
+
+.hard-close {
+  color: #fff;
+  background-color: #007bff; /* Blue for active */
+}
+
+/* Change styles when checkbox is checked */
+.toggle-checkbox:checked + .toggle-label .soft-close {
+  background-color: #fff; /* Inactive style */
+  color: #333;
+}
+
+.toggle-checkbox:checked + .toggle-label .hard-close {
+  background-color: #007bff; /* Active style */
+  color: #fff;
+}
