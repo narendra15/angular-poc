@@ -48,32 +48,21 @@ import { Timezones } from '../shared/enums/timezones.enum'; // Enum or array wit
   imports: [] // Import dependencies like CommonModule if needed
 })
 export class HeaderComponent implements OnInit {
-  title = 'Security Reporting Repository';
+  selectedTimezone: string = ''; // Initialize with an empty string
+  userId = '123'; // Replace with dynamic user ID from authentication
 
-  selectedTimezone: string = 'EST'; // Default timezone
-  timezones = Timezones; // Assuming this is an array or enum for timezones
-  isEmailVisible = false;
-
-  constructor(private store: Store, private timezoneService: TimezoneService) {}
+  constructor(private timezoneService: TimezoneService) {}
 
   ngOnInit(): void {
-    this.store.select('currentTimezone').subscribe((value: string) => {
-      this.selectedTimezone = value;
+    // Subscribe to the timezone observable to get the current value
+    this.timezoneService.timezone$.subscribe((timezone) => {
+      this.selectedTimezone = timezone;
     });
   }
 
-  onTimezoneSelect(timezone: string): void {
-    this.selectedTimezone = timezone;
-
-    // Dispatch the timezone to the store
-    this.store.dispatch(setSelectedTimezone({ selectedTimezone: timezone }));
-
-    // Update the backend about the selection
-    this.timezoneService.setTimezone(timezone, '123'); // Replace '123' with dynamic user ID
-  }
-
-  toggleNotificationTray(): void {
-    this.isEmailVisible = !this.isEmailVisible;
+  onTimezoneSelect(newTimezone: string): void {
+    // Call the service to update the timezone and backend
+    this.timezoneService.setTimezone(newTimezone, this.userId);
   }
 }
 
@@ -120,29 +109,52 @@ constructor(private timezoneService: TimezoneService) {}
 
 import { Injectable } from '@angular/core';
 import { BehaviorSubject } from 'rxjs';
+import { Store } from '@ngrx/store';
 import { HttpClient } from '@angular/common/http';
+import { currentTimezone } from '../ngrx-store/header/header.selectors';
+import { setSelectedTimezone } from '../ngrx-store/header/header.actions';
 
 @Injectable({
-  providedIn: 'root'
+  providedIn: 'root',
 })
 export class TimezoneService {
-  private timezone = new BehaviorSubject<string>('UTC');
+  private timezone = new BehaviorSubject<string>(''); // Initialize empty
   timezone$ = this.timezone.asObservable();
 
-  constructor(private http: HttpClient) {}
-
-  setTimezone(newTimezone: string, userId: string): void {
-    this.timezone.next(newTimezone);
-    this.updateUserTimezone(newTimezone, userId);
+  constructor(private store: Store, private http: HttpClient) {
+    // Subscribe to the store to keep BehaviorSubject in sync
+    this.store.select(currentTimezone).subscribe((storeTimezone: string) => {
+      this.timezone.next(storeTimezone); // Update the BehaviorSubject
+    });
   }
 
-  private updateUserTimezone(newTimezone: string, userId: string): void {
-    // Call the API to update the user's timezone
+  /**
+   * Updates the selected timezone in the app and backend.
+   * @param newTimezone - The new timezone selected by the user.
+   * @param userId - The ID of the user for whom the timezone is being updated.
+   */
+  setTimezone(newTimezone: string, userId: string): void {
+    // Update the store with the new timezone
+    this.store.dispatch(setSelectedTimezone({ selectedTimezone: newTimezone }));
+
+    // Update the backend (placeholder for now)
+    this.updateUserTimezoneInBackend(newTimezone, userId);
+  }
+
+  /**
+   * Sends the selected timezone to the backend to persist user preference.
+   * @param newTimezone - The new timezone to save.
+   * @param userId - The user's unique ID.
+   */
+  private updateUserTimezoneInBackend(newTimezone: string, userId: string): void {
+    const apiUrl = '/api/updateUserTimezone'; // Replace with actual API endpoint
     const payload = { userId, timezone: newTimezone };
-    this.http.post('/api/updateUserTimezone', payload).subscribe({
-      next: () => console.log('Timezone updated successfully!'),
-      error: (err) => console.error('Error updating timezone:', err),
+
+    this.http.post(apiUrl, payload).subscribe({
+      next: () =>
+        console.log(`Timezone updated to ${newTimezone} for user ${userId}`),
+      error: (err) =>
+        console.error('Error updating timezone to backend:', err),
     });
   }
 }
-
