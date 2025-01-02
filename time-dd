@@ -115,3 +115,34 @@ constructor(private timezoneService: TimezoneService) {}
 
 
 ////////////////////////////////////////////////////////
+
+/////////////Time Zone Service //////////////////////
+
+import { Injectable } from '@angular/core';
+import { BehaviorSubject } from 'rxjs';
+import { HttpClient } from '@angular/common/http';
+
+@Injectable({
+  providedIn: 'root'
+})
+export class TimezoneService {
+  private timezone = new BehaviorSubject<string>('UTC');
+  timezone$ = this.timezone.asObservable();
+
+  constructor(private http: HttpClient) {}
+
+  setTimezone(newTimezone: string, userId: string): void {
+    this.timezone.next(newTimezone);
+    this.updateUserTimezone(newTimezone, userId);
+  }
+
+  private updateUserTimezone(newTimezone: string, userId: string): void {
+    // Call the API to update the user's timezone
+    const payload = { userId, timezone: newTimezone };
+    this.http.post('/api/updateUserTimezone', payload).subscribe({
+      next: () => console.log('Timezone updated successfully!'),
+      error: (err) => console.error('Error updating timezone:', err),
+    });
+  }
+}
+
