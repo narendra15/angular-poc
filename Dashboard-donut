@@ -25,11 +25,15 @@ export class DashboardComponent implements OnInit {
         this.dashboardData = data; // Store the raw data
         console.log(`Dashboard data is : ${JSON.stringify(data)}`);
 
-        // Process only user_workflow.rows
-        const processedData = this.processData(data);
+        // Extract rows and process data for the chart
+        const rows = data.user_workflow?.rows || [];
+        const processedData = this.processData(rows);
 
         // Update the chart dynamically
         this.updateDonutChart(processedData);
+
+        // Example: Access "Not Started" data for widgets
+        console.log("Not Started Data:", this.filterByStatus(rows, 'notStarted'));
       },
       error: (err) => {
         console.error('Error fetching data:', err);
@@ -37,31 +41,37 @@ export class DashboardComponent implements OnInit {
     });
   }
 
+  // Modular Filter for Status
+  filterByStatus(rows: any[], statusType: string): any[] {
+    switch (statusType) {
+      case 'notStarted':
+        // Exclude rows where wt_status is "assigned" or "approve"
+        return rows.filter((row) => !["assigned", "approve"].includes(row.wt_status));
+      case 'reAssign':
+        return rows.filter((row) => row.wt_status === "assigned" && row.wt_to_role === "p");
+      case 'submitted':
+        return rows.filter((row) =>
+          row.wt_status === "assigned" && ["r", "a", "b"].includes(row.wt_to_role)
+        );
+      case 'completed':
+        return rows.filter((row) => row.wt_status === "approve");
+      default:
+        return [];
+    }
+  }
+
   // Process Data for Donut Chart
-  processData(data: any): { notStarted: number; reAssigned: number; submitted: number; completed: number } {
-    // Extract rows from user_workflow
-    const rows = data.user_workflow?.rows || [];
+  processData(rows: any[]): { total: number; notStarted: number; reAssigned: number; submitted: number; completed: number } {
+    // Use the modular filter logic for each status
+    const notStarted = this.filterByStatus(rows, 'notStarted').length;
+    const reAssigned = this.filterByStatus(rows, 'reAssign').length;
+    const submitted = this.filterByStatus(rows, 'submitted').length;
+    const completed = this.filterByStatus(rows, 'completed').length;
 
-    // Unique templates
-    const totalTemplates = [...new Set(rows.map((row) => row.wt_template_id))].length;
+    // Total is the sum of all statuses
+    const total = notStarted + reAssigned + submitted + completed;
 
-    // Not Started
-    const notStarted = totalTemplates - rows.filter((row) =>
-      ["assigned", "re-assign", "completed"].includes(row.wt_status)
-    ).length;
-
-    // Re-assigned
-    const reAssigned = rows.filter((row) => row.wt_status === "assigned" && row.wt_to_role === "p").length;
-
-    // Submitted
-    const submitted = rows.filter((row) =>
-      row.wt_status === "assigned" && ["r", "a", "b"].includes(row.wt_to_role)
-    ).length;
-
-    // Completed
-    const completed = rows.filter((row) => row.wt_status === "approve").length;
-
-    return { notStarted, reAssigned, submitted, completed };
+    return { total, notStarted, reAssigned, submitted, completed };
   }
 
   // Create Donut Chart
@@ -93,7 +103,7 @@ export class DashboardComponent implements OnInit {
   }
 
   // Update Donut Chart Dynamically
-  updateDonutChart(processedData: { notStarted: number; reAssigned: number; submitted: number; completed: number }) {
+  updateDonutChart(processedData: { total: number; notStarted: number; reAssigned: number; submitted: number; completed: number }) {
     const newData = [
       processedData.notStarted,
       processedData.reAssigned,
