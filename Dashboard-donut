@@ -1,0 +1,107 @@
+import { Component, OnInit } from '@angular/core';
+import { Chart } from 'chart.js';
+import { DashboardService } from './services/dashboard.service';
+
+@Component({
+  selector: 'app-dashboard',
+  templateUrl: './dashboard.component.html',
+  styleUrls: ['./dashboard.component.css']
+})
+export class DashboardComponent implements OnInit {
+  chart: any; // Chart.js instance
+  dashboardData: any; // Store the fetched data
+
+  constructor(private dashboardService: DashboardService) {}
+
+  ngOnInit() {
+    this.createDonutChart(); // Initialize the chart
+    this.fetchDashboardData(); // Fetch data and dynamically update the chart
+  }
+
+  // Fetch Dashboard Data and Process It
+  fetchDashboardData(): void {
+    this.dashboardService.getData().subscribe({
+      next: (data) => {
+        this.dashboardData = data; // Store the raw data
+        console.log(`Dashboard data is : ${JSON.stringify(data)}`);
+
+        // Process only user_workflow.rows
+        const processedData = this.processData(data);
+
+        // Update the chart dynamically
+        this.updateDonutChart(processedData);
+      },
+      error: (err) => {
+        console.error('Error fetching data:', err);
+      }
+    });
+  }
+
+  // Process Data for Donut Chart
+  processData(data: any): { notStarted: number; reAssigned: number; submitted: number; completed: number } {
+    // Extract rows from user_workflow
+    const rows = data.user_workflow?.rows || [];
+
+    // Unique templates
+    const totalTemplates = [...new Set(rows.map((row) => row.wt_template_id))].length;
+
+    // Not Started
+    const notStarted = totalTemplates - rows.filter((row) =>
+      ["assigned", "re-assign", "completed"].includes(row.wt_status)
+    ).length;
+
+    // Re-assigned
+    const reAssigned = rows.filter((row) => row.wt_status === "assigned" && row.wt_to_role === "p").length;
+
+    // Submitted
+    const submitted = rows.filter((row) =>
+      row.wt_status === "assigned" && ["r", "a", "b"].includes(row.wt_to_role)
+    ).length;
+
+    // Completed
+    const completed = rows.filter((row) => row.wt_status === "approve").length;
+
+    return { notStarted, reAssigned, submitted, completed };
+  }
+
+  // Create Donut Chart
+  createDonutChart() {
+    const ctx = document.getElementById('doughnutChart') as HTMLCanvasElement;
+
+    this.chart = new Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        labels: ['Not started', 'Re-assign', 'Submitted', 'Completed'], // Chart labels
+        datasets: [
+          {
+            label: 'Status',
+            data: [0, 0, 0, 0], // Initial empty data
+            backgroundColor: ['#ed1c24', '#2cbfc1', '#d07704', '#0bb224'], // Colors for each segment
+            borderWidth: 0
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: {
+            position: 'right' // Legend position
+          }
+        }
+      }
+    });
+  }
+
+  // Update Donut Chart Dynamically
+  updateDonutChart(processedData: { notStarted: number; reAssigned: number; submitted: number; completed: number }) {
+    const newData = [
+      processedData.notStarted,
+      processedData.reAssigned,
+      processedData.submitted,
+      processedData.completed
+    ];
+
+    this.chart.data.datasets[0].data = newData; // Update the data array
+    this.chart.update(); // Refresh the chart to reflect new data
+  }
+}
