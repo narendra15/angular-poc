@@ -1,0 +1,26 @@
+updateDonutChart(processedData: { total: number; notStarted: number; reAssigned: number; submitted: number; completed: number }) {
+  if (!processedData || typeof processedData !== 'object') {
+    console.error('Invalid processedData passed to updateDonutChart:', processedData);
+    return; // Exit if processedData is invalid
+  }
+
+  // Ensure the chart instance is initialized
+  if (!this.chart) {
+    console.error('Chart instance is not initialized');
+    return;
+  }
+
+  // Ensure datasets[0] exists in the chart
+  if (!this.chart.data.datasets || !this.chart.data.datasets[0]) {
+    console.error('Chart datasets are not initialized correctly:', this.chart.data.datasets);
+    return;
+  }
+
+  const { notStarted, reAssigned, submitted, completed } = processedData;
+  const newData = [notStarted, reAssigned, submitted, completed];
+  console.log('Updating Chart Data:', newData);
+
+  // Update chart data
+  this.chart.data.datasets[0].data = newData;
+  this.chart.update();
+}
