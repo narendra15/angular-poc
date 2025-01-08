@@ -18,18 +18,28 @@ export class DashboardComponent implements OnInit {
     this.fetchDashboardData(); // Fetch data and dynamically update the chart
   }
 
-  // Fetch Dashboard Data and Process It
   fetchDashboardData(): void {
     this.dashboardService.getData().subscribe({
       next: (data) => {
         console.log('Dashboard data fetched:', data);
 
-        // Extract `user_workflow` and process its rows
-        const userWorkflow = data.user_workflow || {};
-        const processedData = this.processData(userWorkflow);
+        const userWorkflow = data?.user_workflow || {}; // Safely access user_workflow
+        const rows = Array.isArray(userWorkflow.rows) ? userWorkflow.rows : [];
+        console.log('Rows:', rows); // Log the rows array
 
+        const processedData = this.processData(rows);
         console.log('Processed Data:', processedData); // Debug log
-        this.updateDonutChart(processedData);
+
+        // Ensure processedData is valid before updating the chart
+        if (
+          processedData &&
+          typeof processedData === 'object' &&
+          processedData.notStarted !== undefined
+        ) {
+          this.updateDonutChart(processedData);
+        } else {
+          console.error('Invalid processedData:', processedData);
+        }
       },
       error: (err) => {
         console.error('Error fetching data:', err);
@@ -38,10 +48,11 @@ export class DashboardComponent implements OnInit {
     });
   }
 
-  // Process Data for Donut Chart
-  processData(userWorkflow: any): { total: number; notStarted: number; reAssigned: number; submitted: number; completed: number } {
-    // Extract rows or default to an empty array
-    const rows = userWorkflow?.rows || [];
+  processData(rows: any[]): { total: number; notStarted: number; reAssigned: number; submitted: number; completed: number } {
+    if (!Array.isArray(rows)) {
+      console.error('Invalid rows data:', rows);
+      return { total: 0, notStarted: 0, reAssigned: 0, submitted: 0, completed: 0 };
+    }
 
     // Apply filtering logic
     const notStarted = this.filterByStatus(rows, 'notStarted').length;
@@ -55,11 +66,14 @@ export class DashboardComponent implements OnInit {
     return { total, notStarted, reAssigned, submitted, completed };
   }
 
-  // Modular Filter for Status
   filterByStatus(rows: any[], statusType: string): any[] {
+    if (!Array.isArray(rows)) {
+      console.error('Invalid rows passed to filterByStatus:', rows);
+      return [];
+    }
+
     switch (statusType) {
       case 'notStarted':
-        // Exclude rows where wt_status is "assigned" or "approve"
         return rows.filter((row) => !["assigned", "approve"].includes(row.wt_status));
       case 'reAssign':
         return rows.filter((row) => row.wt_status === "assigned" && row.wt_to_role === "p");
@@ -74,7 +88,6 @@ export class DashboardComponent implements OnInit {
     }
   }
 
-  // Create Donut Chart
   createDonutChart() {
     const ctx = document.getElementById('doughnutChart') as HTMLCanvasElement;
 
@@ -102,21 +115,29 @@ export class DashboardComponent implements OnInit {
     });
   }
 
-  // Update Donut Chart Dynamically
   updateDonutChart(processedData: { total: number; notStarted: number; reAssigned: number; submitted: number; completed: number }) {
     if (!processedData || typeof processedData !== 'object') {
       console.error('Invalid data passed to updateDonutChart:', processedData);
-      return;
+      return; // Exit if processedData is invalid
     }
 
-    const newData = [
-      processedData.notStarted,
-      processedData.reAssigned,
-      processedData.submitted,
-      processedData.completed
-    ];
+    // Ensure all required keys are present
+    const { notStarted, reAssigned, submitted, completed } = processedData;
+    if (
+      notStarted === undefined ||
+      reAssigned === undefined ||
+      submitted === undefined ||
+      completed === undefined
+    ) {
+      console.error('Missing required properties in processedData:', processedData);
+      return; // Exit if any key is missing
+    }
 
+    const newData = [notStarted, reAssigned, submitted, completed];
+
+    // Update the chart
+    console.log('Chart Data:', newData); // Log chart data
     this.chart.data.datasets[0].data = newData; // Update the data array
-    this.chart.update(); // Refresh the chart to reflect new data
+    this.chart.update(); // Refresh the chart
   }
 }
