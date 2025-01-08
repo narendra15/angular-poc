@@ -1,0 +1,24 @@
+processReAssignedData(rows: any[]): any[] {
+  if (!Array.isArray(rows)) {
+    console.error('Invalid rows data for re-assigned processing:', rows);
+    return [];
+  }
+
+  // Filter and map data for re-assigned widget
+  const reAssignedData = rows
+    .filter((row) => row.wt_status === "assigned" && row.wt_to_role === "p") // Filtering logic
+    .map((row) => ({
+      template: row.wt_template_id,
+      comments: "Please review the changes.", // Placeholder comment (replace as needed)
+      reAssignedBy: "Reviewer", // Replace with dynamic value if available
+      dateTime: row.wt_ts
+    }));
+
+  console.log('Processed Re-Assigned Data:', reAssignedData);
+  return reAssignedData;
+}
+
+
+/// add in fetch data
+
+ this.reAssignedData = this.processReAssignedData(rows);
