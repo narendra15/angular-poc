@@ -22,23 +22,37 @@ export class DashboardComponent implements OnInit {
   fetchDashboardData(): void {
     this.dashboardService.getData().subscribe({
       next: (data) => {
-        this.dashboardData = data; // Store the raw data
-        console.log(`Dashboard data is : ${JSON.stringify(data)}`);
+        console.log('Dashboard data fetched:', data);
 
-        // Extract rows and process data for the chart
-        const rows = data.user_workflow?.rows || [];
-        const processedData = this.processData(rows);
+        // Extract `user_workflow` and process its rows
+        const userWorkflow = data.user_workflow || {};
+        const processedData = this.processData(userWorkflow);
 
-        // Update the chart dynamically
+        console.log('Processed Data:', processedData); // Debug log
         this.updateDonutChart(processedData);
-
-        // Example: Access "Not Started" data for widgets
-        console.log("Not Started Data:", this.filterByStatus(rows, 'notStarted'));
       },
       error: (err) => {
         console.error('Error fetching data:', err);
+        alert('Failed to fetch dashboard data. Please try again later.');
       }
     });
+  }
+
+  // Process Data for Donut Chart
+  processData(userWorkflow: any): { total: number; notStarted: number; reAssigned: number; submitted: number; completed: number } {
+    // Extract rows or default to an empty array
+    const rows = userWorkflow?.rows || [];
+
+    // Apply filtering logic
+    const notStarted = this.filterByStatus(rows, 'notStarted').length;
+    const reAssigned = this.filterByStatus(rows, 'reAssign').length;
+    const submitted = this.filterByStatus(rows, 'submitted').length;
+    const completed = this.filterByStatus(rows, 'completed').length;
+
+    // Total is the sum of all statuses
+    const total = notStarted + reAssigned + submitted + completed;
+
+    return { total, notStarted, reAssigned, submitted, completed };
   }
 
   // Modular Filter for Status
@@ -58,20 +72,6 @@ export class DashboardComponent implements OnInit {
       default:
         return [];
     }
-  }
-
-  // Process Data for Donut Chart
-  processData(rows: any[]): { total: number; notStarted: number; reAssigned: number; submitted: number; completed: number } {
-    // Use the modular filter logic for each status
-    const notStarted = this.filterByStatus(rows, 'notStarted').length;
-    const reAssigned = this.filterByStatus(rows, 'reAssign').length;
-    const submitted = this.filterByStatus(rows, 'submitted').length;
-    const completed = this.filterByStatus(rows, 'completed').length;
-
-    // Total is the sum of all statuses
-    const total = notStarted + reAssigned + submitted + completed;
-
-    return { total, notStarted, reAssigned, submitted, completed };
   }
 
   // Create Donut Chart
@@ -104,6 +104,11 @@ export class DashboardComponent implements OnInit {
 
   // Update Donut Chart Dynamically
   updateDonutChart(processedData: { total: number; notStarted: number; reAssigned: number; submitted: number; completed: number }) {
+    if (!processedData || typeof processedData !== 'object') {
+      console.error('Invalid data passed to updateDonutChart:', processedData);
+      return;
+    }
+
     const newData = [
       processedData.notStarted,
       processedData.reAssigned,
