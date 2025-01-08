@@ -1,0 +1,40 @@
+processSubmittedData(rows: any[]): any[] {
+  if (!Array.isArray(rows)) {
+    console.error('Invalid rows data for submitted widget:', rows);
+    return [];
+  }
+
+  // Map data for the submitted widget
+  const submittedData = rows.map((row) => {
+    let currentStage = 0;
+    let toUser = "Preparer";
+
+    // Determine currentStage and toUser based on wt_to_role
+    switch (row.wt_to_role) {
+      case "R":
+        currentStage = 1;
+        toUser = "Reviewer";
+        break;
+      case "A":
+        currentStage = 2;
+        toUser = "Attestor";
+        break;
+      case "B":
+        currentStage = 3;
+        toUser = "BPS Team";
+        break;
+    }
+
+    return {
+      steps: ["VOS Captured", "Submitted for Review", "Submitted for Attestation", "Pending for Signoff"],
+      currentStage: currentStage,
+      template: row.wt_template_id,
+      comments: row.wt_notes || "No comments available", // Handle empty comments
+      toUser: toUser,
+      dateTime: row.wt_ts
+    };
+  });
+
+  console.log('Processed Submitted Data:', submittedData);
+  return submittedData;
+}
