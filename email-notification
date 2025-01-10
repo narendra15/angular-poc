@@ -1,0 +1,148 @@
+dashboard ts
+
+
+import { Component, OnInit } from '@angular/core';
+import { DashboardService } from './services/dashboard.service';
+import { SharedDataService } from './services/shared-data.service';
+
+@Component({
+  selector: 'app-dashboard',
+  templateUrl: './dashboard.component.html',
+  styleUrls: ['./dashboard.component.css'],
+})
+export class DashboardComponent implements OnInit {
+  constructor(
+    private dashboardService: DashboardService,
+    private sharedDataService: SharedDataService // Inject the shared service
+  ) {}
+
+  ngOnInit() {
+    this.fetchDashboardData();
+  }
+
+  fetchDashboardData(): void {
+    this.dashboardService.getData().subscribe({
+      next: (data) => {
+        console.log('Dashboard data fetched:', data);
+
+        const userWorkflow = data?.user_workflow || {};
+        const rows = Array.isArray(userWorkflow.rows) ? userWorkflow.rows : [];
+        const userInfo = data?.user_info?.[0] || {};
+        const upPrevLoginTime = userInfo.up_prev_login_time;
+
+        console.log('Rows:', rows);
+        console.log('Previous Login Time:', upPrevLoginTime);
+
+        // Process dropdown data
+        const dropdownData = this.processDropdownData(rows, upPrevLoginTime);
+
+        // Send dropdown data to the shared service
+        this.sharedDataService.updateEmailNotifications(dropdownData);
+
+        console.log('Final Dropdown Data:', dropdownData);
+      },
+      error: (err) => {
+        console.error('Error fetching data:', err);
+        alert('Failed to fetch dashboard data. Please try again later.');
+      },
+    });
+  }
+
+  processDropdownData(rows: any[], upPrevLoginTime: string): any[] {
+    if (!Array.isArray(rows)) {
+      console.error('Invalid rows data for dropdown:', rows);
+      return [];
+    }
+
+    // Filter records with wt_status = "email" and wt_ts > up_prev_login_time
+    const filteredRecords = rows
+      .filter((row) => row.wt_status === "email" && new Date(row.wt_ts) > new Date(upPrevLoginTime))
+      .sort((a, b) => new Date(b.wt_ts).getTime() - new Date(a.wt_ts).getTime()) // Sort by wt_ts descending
+      .slice(0, 3); // Limit to latest 3 records
+
+    // Map filtered records to the required format
+    return filteredRecords.map((row) => {
+      // Determine subject based on from_user and to_user
+      const subject =
+        (row.wt_from_role === "P" && row.wt_to_role === "R") ||
+        (row.wt_from_role === "R" && row.wt_to_role === "A") ||
+        (row.wt_from_role === "A" && row.wt_to_role === "B")
+          ? "Assigned Template"
+          : "Re-assigned Template";
+
+      // Abbreviate from_user
+      const fromUserMap: { [key: string]: string } = {
+        P: "Preparer",
+        R: "Reviewer",
+        A: "Attestor",
+        B: "BPS Team",
+      };
+      const fromUser = fromUserMap[row.wt_from_role] || row.wt_from_role;
+
+      return {
+        subject: subject,
+        from: `${fromUser}, ${row.wt_from_user}`, // Combine abbreviated role and user
+        message: row.wt_notes || "No notes available", // Message body
+        sentTime: row.wt_ts, // Sent time
+      };
+    });
+  }
+}
+
+
+/// new email service seervice
+import { Injectable } from '@angular/core';
+import { BehaviorSubject } from 'rxjs';
+
+@Injectable({
+  providedIn: 'root',
+})
+export class SharedDataService {
+  private emailNotificationsSubject = new BehaviorSubject<any[]>([]); // Holds the dropdown data
+  emailNotifications$ = this.emailNotificationsSubject.asObservable(); // Observable for the HeaderComponent to subscribe to
+
+  // Method to update the email notifications
+  updateEmailNotifications(data: any[]): void {
+    this.emailNotificationsSubject.next(data); // Update the BehaviorSubject
+  }
+}
+
+
+/// header ts
+
+import { Component, OnInit } from '@angular/core';
+import { SharedDataService } from './services/shared-data.service';
+
+@Component({
+  selector: 'app-header',
+  templateUrl: './header.component.html',
+  styleUrls: ['./header.component.css'],
+})
+export class HeaderComponent implements OnInit {
+  dropdownData: any[] = []; // Holds the data for the dropdown
+
+  constructor(private sharedDataService: SharedDataService) {}
+
+  ngOnInit() {
+    // Subscribe to the shared service to get dropdown data updates
+    this.sharedDataService.emailNotifications$.subscribe((data) => {
+      this.dropdownData = data;
+      console.log('Dropdown data in HeaderComponent:', this.dropdownData);
+    });
+  }
+}
+
+
+// header html
+
+<div class="dropdown">
+  <ul>
+    <li *ngFor="let item of dropdownData">
+      <h4>{{ item.subject }}</h4>
+      <p>{{ item.message }}</p>
+      <p><strong>From:</strong> {{ item.from }}</p>
+      <p><strong>Sent:</strong> {{ item.sentTime | date:'medium' }}</p>
+    </li>
+  </ul>
+</div>
+
