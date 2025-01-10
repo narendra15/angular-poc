@@ -17,18 +17,21 @@ processFCBalancesData(templateData: any, fcBalanceCSV: string): any[] {
     const securityData = templateData.uniqueTemplateData[templateName]?.SecurityData || [];
     const fsdSourceSystem = securityData[0]?.fsd_source_system || 'Unknown';
 
-    // Template Balance
     const templateBalance = templateName.startsWith('EC_')
       ? 'NA'
-      : securityData.reduce((sum, record) => sum + (record.fsd_tc_reported_value || 0), 0);
+      : securityData.reduce((sum: number, record: { fsd_tc_reported_value?: number }) => 
+          sum + (record.fsd_tc_reported_value || 0), 
+          0
+        );
 
-    // FC Balance
-    const filteredFcRecords = fcBalanceData.filter((record) => record.Template_Id === templateName);
+    const filteredFcRecords = fcBalanceData.filter((record: any) => record.Template_Id === templateName);
     const fcBalance = filteredFcRecords.length > 0
-      ? filteredFcRecords.reduce((sum, record) => sum + (record.TCA_Amount || 0), 0)
-      : 'FNA'; // If no data available, set FC Balance to "FNA"
+      ? filteredFcRecords.reduce((sum: number, record: { TCA_Amount: number }) => 
+          sum + (record.TCA_Amount || 0), 
+          0
+        )
+      : 'FNA';
 
-    // FC Status
     const fcStatus = filteredFcRecords[0]?.Type || 'Unknown';
 
     return {
@@ -40,6 +43,7 @@ processFCBalancesData(templateData: any, fcBalanceCSV: string): any[] {
     };
   });
 }
+
 
 
 
