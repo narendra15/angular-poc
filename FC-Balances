@@ -8,6 +8,7 @@ const userTemplatesData = data.data.user_template_data[selectedUser] || {};
 
 
 /// processes data
+
 processFCBalancesData(templateData: any, fcBalanceCSV: string): any[] {
   const uniqueTemplateNames = templateData?.uniqueTemplateNames || [];
   const fcBalanceData = this.parseCSVData(fcBalanceCSV);
@@ -23,7 +24,9 @@ processFCBalancesData(templateData: any, fcBalanceCSV: string): any[] {
 
     // FC Balance
     const filteredFcRecords = fcBalanceData.filter((record) => record.Template_Id === templateName);
-    const fcBalance = filteredFcRecords.reduce((sum, record) => sum + (record.TCA_Amount || 0), 0);
+    const fcBalance = filteredFcRecords.length > 0
+      ? filteredFcRecords.reduce((sum, record) => sum + (record.TCA_Amount || 0), 0)
+      : 'FNA'; // If no data available, set FC Balance to "FNA"
 
     // FC Status
     const fcStatus = filteredFcRecords[0]?.Type || 'Unknown';
