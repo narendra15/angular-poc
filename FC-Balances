@@ -1,0 +1,56 @@
+
+const userTemplatesData = data.data.user_template_data[selectedUser] || {};
+      const fcBalanceCSV = data.data.fc_balance || '';
+
+ // Process FC Balances Data
+      const fcBalancesData = this.processFCBalancesData(userTemplatesData, fcBalanceCSV);
+      this.dataSource = fcBalancesData;
+
+
+/// processes data
+processFCBalancesData(templateData: any, fcBalanceCSV: string): any[] {
+  const uniqueTemplateNames = templateData?.uniqueTemplateNames || [];
+  const fcBalanceData = this.parseCSVData(fcBalanceCSV);
+
+  return uniqueTemplateNames.map((templateName: string) => {
+    const securityData = templateData.uniqueTemplateData[templateName]?.SecurityData || [];
+    const fsdSourceSystem = securityData[0]?.fsd_source_system || 'Unknown';
+
+    // Template Balance
+    const templateBalance = templateName.startsWith('EC_')
+      ? 'NA'
+      : securityData.reduce((sum, record) => sum + (record.fsd_tc_reported_value || 0), 0);
+
+    // FC Balance
+    const filteredFcRecords = fcBalanceData.filter((record) => record.Template_Id === templateName);
+    const fcBalance = filteredFcRecords.reduce((sum, record) => sum + (record.TCA_Amount || 0), 0);
+
+    // FC Status
+    const fcStatus = filteredFcRecords[0]?.Type || 'Unknown';
+
+    return {
+      templateName,
+      templateSource: fsdSourceSystem,
+      templateBalance,
+      fcBalance,
+      fcStaus: fcStatus
+    };
+  });
+}
+
+
+
+//// CSV parser
+
+parseCSVData(csvData: string): any[] {
+  const lines = csvData.split('\n');
+  const headers = lines[0].split(',');
+
+  return lines.slice(1).map((line) => {
+    const values = line.split(',');
+    return headers.reduce((obj, header, index) => {
+      obj[header.trim()] = isNaN(Number(values[index])) ? values[index].trim() : Number(values[index].trim());
+      return obj;
+    }, {});
+  });
+}
