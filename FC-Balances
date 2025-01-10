@@ -55,9 +55,12 @@ parseCSVData(csvData: string): any[] {
 
   return lines.slice(1).map((line) => {
     const values = line.split(',');
-    return headers.reduce((obj, header, index) => {
+    const obj: { [key: string]: any } = {}; // Define obj with a string index signature
+    headers.reduce((obj, header, index) => {
       obj[header.trim()] = isNaN(Number(values[index])) ? values[index].trim() : Number(values[index].trim());
       return obj;
-    }, {});
+    }, obj);
+    return obj;
   });
 }
+
