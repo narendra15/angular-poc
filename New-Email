@@ -1,0 +1,53 @@
+processEmailNotification(csvData: string, upPrevLoginTime: string): any[] {
+  const emailData = this.parseCSVData(csvData); // Parse CSV data
+  const prevLoginTime = new Date(upPrevLoginTime).getTime();
+
+  // Filter and process email notifications
+  const filteredEmails = emailData
+    .filter((record: any) => {
+      const emailTimestamp = new Date(record.en_processed_ts).getTime();
+      return emailTimestamp > prevLoginTime; // Compare timestamps
+    })
+    .slice(0, 3) // Get the latest 3 records
+    .map((record: any) => ({
+      sender: record.en_email_sender || 'Unknown Sender',
+      receiver: record.en_email_recipient || 'Unknown Receiver',
+      subject: record.en_email_subject || 'No Subject',
+      body: record.en_email_body || 'No Body',
+      templateId: record.en_template_id || 'Unknown Template',
+      timestamp: record.en_processed_ts || 'No Timestamp',
+    }));
+
+  return filteredEmails;
+}
+
+parseCSVData(csvData: string): any[] {
+  const lines = csvData.split('\n');
+  const headers = lines[0].split(',');
+
+  return lines.slice(1).map(line => {
+    const values = line.split(',');
+    return headers.reduce((obj: any, header: string, index: number) => {
+      obj[header.trim()] = values[index]?.trim();
+      return obj;
+    }, {});
+  });
+}
+
+
+
+
+fetchDashboardData(): void {
+  this.dashboardService.getEmailNotifications().subscribe({
+    next: (csvData) => {
+      const upPrevLoginTime = this.store.selectSnapshot(state => state.userInfo.up_prev_login_time);
+      const emailNotifications = this.processEmailNotification(csvData, upPrevLoginTime);
+
+      this.emailNotificationService.updateEmailNotifications(emailNotifications);
+      console.log('Email Notifications:', emailNotifications);
+    },
+    error: (err) => {
+      console.error('Error fetching email notifications:', err);
+    }
+  });
+}
