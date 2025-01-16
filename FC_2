@@ -1,0 +1,58 @@
+processFCBalancesData(data: any, selectedUser: string): void {
+  const templateData = data.user_template_data[selectedUser];
+  const fcBalanceData = this.parseCSVData(data.fc_balance);
+
+  // Grouping by BU, RESP, GL, and Currency
+  const groupedFcBalance = fcBalanceData.reduce((acc: any, record: any) => {
+    const key = `${record.Business_Unit}-${record.Responsibility_Centre}-${record.GL_Groups}-${record.Currency}`;
+    if (!acc[key]) {
+      acc[key] = {
+        BU: record.Business_Unit,
+        RESP: record.Responsibility_Centre,
+        GL: record.GL_Groups,
+        Currency: record.Currency,
+        FC_Balance: 0,
+        FC_Status: record.Type || 'Unknown',
+      };
+    }
+    acc[key].FC_Balance += record.TCA_Amount || 0;
+    return acc;
+  }, {});
+
+  const groupedSecurityData = Object.keys(templateData?.uniqueTemplateData || {}).reduce((acc: any, templateName: string) => {
+    const securityData = templateData.uniqueTemplateData[templateName]?.SecurityData || [];
+    securityData.forEach((record: any) => {
+      const key = `${record.Business_Unit}-${record.Responsibility_Centre}-${record.GL_Groups}-${record.Currency}`;
+      if (!acc[key]) {
+        acc[key] = {
+          BU: record.Business_Unit,
+          RESP: record.Responsibility_Centre,
+          GL: record.GL_Groups,
+          Currency: record.Currency,
+          Template_Balance: 0,
+        };
+      }
+      acc[key].Template_Balance += record.fsd_tc_reported_value || 0;
+    });
+    return acc;
+  }, {});
+
+  // Combine grouped data into final table format
+  const tableData = Object.keys(groupedFcBalance).map((key) => {
+    const fcData = groupedFcBalance[key];
+    const securityData = groupedSecurityData[key] || { Template_Balance: 'NA' };
+
+    return {
+      BU: fcData.BU,
+      RESP: fcData.RESP,
+      GL: fcData.GL,
+      Currency: fcData.Currency,
+      Template_Balance: securityData.Template_Balance,
+      FC_Balance: fcData.FC_Balance || 'FNA',
+      FC_Status: fcData.FC_Status,
+    };
+  });
+
+  // Update the table data source
+  this.dataSource = tableData;
+}
