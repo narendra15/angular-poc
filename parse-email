@@ -1,0 +1,16 @@
+parseEmailCSVData(csvData: string): any[] {
+  const lines = csvData.split('\n'); // Split CSV into lines
+  const rawHeaders = lines[0].split(','); // Extract headers from the first line
+  const headers = rawHeaders.map((header) => header.trim()); // Clean up headers
+
+  return lines.slice(1).map((line) => {
+    const values = line.split(','); // Split the line into values
+    const obj: any = {};
+    headers.forEach((header, index) => {
+      if (header) { // Avoid empty headers
+        obj[header] = values[index]?.trim() || null; // Map values to headers
+      }
+    });
+    return obj;
+  });
+}
