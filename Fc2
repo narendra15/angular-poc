@@ -1,0 +1,61 @@
+processFCBalancesData(templateData: any, fcBalanceCSV: string): any[] {
+  const fcBalanceData = this.parseCSVData(fcBalanceCSV);
+
+  // Group data by unique combinations of BU, RESP, Currency, GL Groups
+  const groupedData = fcBalanceData.reduce((acc: any, record: any) => {
+    const key = `${record.Business_Unit}-${record.Responsibility_Centre}-${record.Currency}-${record.GL_Groups}`;
+    if (!acc[key]) {
+      acc[key] = {
+        BU: record.Business_Unit,
+        RESP: record.Responsibility_Centre,
+        Currency: record.Currency,
+        GLGroups: record.GL_Groups,
+        FCBalance: 0,
+        TemplateBalance: 0,
+      };
+    }
+    acc[key].FCBalance += record.TCA_Amount || 0;
+    return acc;
+  }, {});
+
+  // Calculate Template Balance for each group
+  Object.keys(groupedData).forEach((key) => {
+    const group = groupedData[key];
+    const relatedTemplates = Object.keys(templateData.uniqueTemplateData).filter(
+      (templateName) => {
+        const securityData = templateData.uniqueTemplateData[templateName].securityData || [];
+        return securityData.some(
+          (data: any) =>
+            data.BU === group.BU &&
+            data.RESP === group.RESP &&
+            data.Currency === group.Currency &&
+            data.GL_Groups === group.GLGroups
+        );
+      }
+    );
+
+    group.TemplateBalance = relatedTemplates.reduce((sum: number, templateName: string) => {
+      const securityData = templateData.uniqueTemplateData[templateName].securityData || [];
+      return (
+        sum +
+        securityData.reduce(
+          (subSum: number, record: any) => subSum + (record.fsd_tc_reported_value || 0),
+          0
+        )
+      );
+    }, 0);
+
+    group.Variance = group.TemplateBalance - group.FCBalance;
+  });
+
+  // Transform grouped data into an array for table display
+  return Object.values(groupedData).map((group: any) => ({
+    BU: group.BU,
+    RESP: group.RESP,
+    Currency: group.Currency,
+    GLGroups: group.GLGroups,
+    TemplateBalance: this.currencyPipe.transform(group.TemplateBalance, 'USD', 'symbol', '1.2-2'),
+    FCBalance: this.currencyPipe.transform(group.FCBalance, 'USD', 'symbol', '1.2-2'),
+    Variance: this.currencyPipe.transform(group.Variance, 'USD', 'symbol', '1.2-2'),
+  }));
+}
