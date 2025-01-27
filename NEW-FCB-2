@@ -1,0 +1,84 @@
+// Utility method to parse template balance content
+parseTemplateBalanceContent(content: string): any[] {
+  if (!content) {
+    console.error('Template balance content is empty');
+    return [];
+  }
+
+  const lines = content.split('\n').filter(line => line.trim());
+  return lines.map(line => {
+    const [templateId, bu, resp, glGroup, currency, templateBalance] = line.split(',');
+    return {
+      BU: bu?.trim(),
+      RESP: resp?.trim(),
+      GL_Groups: glGroup?.trim(),
+      Currency: currency?.trim(),
+      Template_Balance: parseFloat(templateBalance || '0'),
+    };
+  });
+}
+
+// Main method
+processFCBalancesData(templateData: any, fcBalanceData: any[]): any[] {
+  const templateBalanceTotal = templateData.templates_balance_total || {};
+  const fcBalance = fcBalanceData || [];
+
+  // Create a map to group by BU, RESP, Currency, GL Groups
+  const groupedData: Record<string, any> = {};
+
+  // Process FC Balance
+  fcBalance.forEach(record => {
+    const key = `${record.Business_Unit}_${record.Responsibility_Centre}_${record.Currency}_${record.GL_Groups}`;
+    if (!groupedData[key]) {
+      groupedData[key] = {
+        BU: record.Business_Unit,
+        RESP: record.Responsibility_Centre,
+        Currency: record.Currency,
+        GL_Groups: record.GL_Groups,
+        Template_Balance: 0,
+        FC_Balance: 0,
+        Variance: 0,
+        Template_Name: record.Template_Id,
+      };
+    }
+
+    // Sum FC Balance
+    groupedData[key].FC_Balance += parseFloat(record.TCA_Amount || '0');
+  });
+
+  // Process Template Balances
+  Object.keys(templateBalanceTotal).forEach(templateName => {
+    const templateDetails = templateBalanceTotal[templateName];
+    if (templateDetails?.isError) {
+      // Handle error cases
+      Object.keys(groupedData).forEach(key => {
+        groupedData[key].Template_Balance = 'Error';
+        groupedData[key].Variance = 'Error';
+      });
+      return;
+    }
+
+    // Parse template balance content using the utility method
+    const parsedBalances = this.parseTemplateBalanceContent(templateDetails.content);
+    parsedBalances.forEach(parsedRecord => {
+      const key = `${parsedRecord.BU}_${parsedRecord.RESP}_${parsedRecord.Currency}_${parsedRecord.GL_Groups}`;
+      if (groupedData[key]) {
+        groupedData[key].Template_Balance += parsedRecord.Template_Balance;
+        groupedData[key].Variance =
+          groupedData[key].Template_Balance - groupedData[key].FC_Balance;
+      }
+    });
+  });
+
+  // Convert grouped data to an array
+  return Object.values(groupedData).map(item => ({
+    BU: item.BU,
+    RESP: item.RESP,
+    Currency: item.Currency,
+    GL_Groups: item.GL_Groups,
+    Template_Balance: item.Template_Balance || 'FNA',
+    FC_Balance: item.FC_Balance || 'FNA',
+    Variance: item.Variance || 'FNA',
+    Template_Name: item.Template_Name,
+  }));
+}
