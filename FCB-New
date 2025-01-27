@@ -1,0 +1,101 @@
+processFCBalancesData(templateData: any, fcBalanceData: any): any[] {
+  const uniqueTemplateNames = templateData?.uniqueTemplateNames || [];
+  const templateBalanceTotal = templateData?.templates_balance_total || {};
+
+  return uniqueTemplateNames.map((templateName: string) => {
+    const templateDetails = templateBalanceTotal[templateName];
+
+    // Handle missing or error cases
+    if (!templateDetails) {
+      return {
+        templateName,
+        bu: 'FNA',
+        resp: 'FNA',
+        currency: 'FNA',
+        glGroups: 'FNA',
+        templateBalance: 'FNA',
+        fcBalance: 'FNA',
+        variance: 'FNA',
+      };
+    }
+
+    if (templateDetails.isError) {
+      return {
+        templateName,
+        bu: templateDetails.errorMessage,
+        resp: templateDetails.errorMessage,
+        currency: templateDetails.errorMessage,
+        glGroups: templateDetails.errorMessage,
+        templateBalance: templateDetails.errorMessage,
+        fcBalance: templateDetails.errorMessage,
+        variance: templateDetails.errorMessage,
+      };
+    }
+
+    // Parse `content` from `template_balance_total`
+    const parsedTemplateBalance = this.parseCSVData(templateDetails.content);
+
+    // Group and sum Template Balance by BU, RESP, Currency, GL Groups
+    const groupedTemplateBalance = this.groupAndSummarize(parsedTemplateBalance);
+
+    // Filter and group FC Balance
+    const groupedFcBalance = this.groupAndSummarize(fcBalanceData, templateName);
+
+    // Merge the results
+    return groupedTemplateBalance.map((group: any) => {
+      const fcGroup = groupedFcBalance.find(
+        (fc: any) =>
+          fc.bu === group.bu &&
+          fc.resp === group.resp &&
+          fc.currency === group.currency &&
+          fc.glGroups === group.glGroups
+      );
+
+      const fcBalance = fcGroup ? fcGroup.sumValue : 0;
+      const variance = group.sumValue - fcBalance;
+
+      return {
+        templateName,
+        bu: group.bu,
+        resp: group.resp,
+        currency: group.currency,
+        glGroups: group.glGroups,
+        templateBalance: group.sumValue,
+        fcBalance,
+        variance,
+      };
+    });
+  });
+}
+
+groupAndSummarize(data: any[], templateName?: string): any[] {
+  const groupedData: { [key: string]: any } = {};
+
+  data.forEach((record: any) => {
+    const key = `${record.BU}-${record.RESP}-${record.Currency}-${record.GL_Groups}`;
+    if (!groupedData[key]) {
+      groupedData[key] = {
+        bu: record.BU,
+        resp: record.RESP,
+        currency: record.Currency,
+        glGroups: record.GL_Groups,
+        sumValue: 0,
+      };
+    }
+    groupedData[key].sumValue += parseFloat(record.fsd_tc_reported_value || record.TCA_Amount || 0);
+  });
+
+  return Object.values(groupedData);
+}
+
+parseCSVData(csvData: string): any[] {
+  const lines = csvData.split('\n');
+  const headers = lines[0].split(',');
+  return lines.slice(1).map((line) => {
+    const values = line.split(',');
+    return headers.reduce((obj, header, index) => {
+      obj[header.trim()] = values[index]?.trim() || '';
+      return obj;
+    }, {});
+  });
+}
