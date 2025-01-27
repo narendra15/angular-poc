@@ -1,0 +1,29 @@
+const parsedTemplateBalance = Object.keys(templateBalanceTotal || {}).reduce(
+  (acc: Record<string, ParsedTemplateBalance>, templateName: string) => {
+    const content = templateBalanceTotal[templateName]?.content || '';
+
+    // Ensure content is a string before processing
+    if (typeof content !== 'string') {
+      console.error(`Invalid content for template: ${templateName}`, content);
+      return acc;
+    }
+
+    const parsedRows = content
+      .trim() // Trim the content safely
+      .split('\n') // Split into rows
+      .slice(1) // Remove the header
+      .map((row: string) => {
+        const [templateId, bu, resp, sumFsdTc] = row.split(',');
+        return {
+          Template_Name: templateId || 'FNA',
+          BU: bu || 'FNA',
+          RESP: resp || 'FNA',
+          Template_Balance: parseFloat(sumFsdTc) || 0,
+        };
+      });
+
+    acc[templateName] = parsedRows;
+    return acc;
+  },
+  {}
+);
