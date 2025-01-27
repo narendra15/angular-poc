@@ -1,0 +1,42 @@
+function parseTemplateBalanceData(templateData: any): any[] {
+  const parsedTemplateBalance: any[] = [];
+
+  // Iterate over each template in template_balance_total
+  Object.entries(templateData.templates_balance_total || {}).forEach(
+    ([templateName, { content }]: [string, any]) => {
+      if (typeof content !== 'string') {
+        console.error(`Invalid content for template: ${templateName}`);
+        return;
+      }
+
+      // Process the content field: split into rows and extract data
+      content
+        .trim()
+        .split('\n') // Split into rows
+        .slice(1) // Skip the header row
+        .forEach((row: string) => {
+          const [templateId, bu, resp, sumFsdTc] = row.split(',');
+
+          // Check if an entry with the same BU and RESP already exists
+          const existingEntry = parsedTemplateBalance.find(
+            (entry) => entry.BU === bu && entry.RESP === resp
+          );
+
+          if (existingEntry) {
+            // If an entry exists, sum up the Template_Balance
+            existingEntry.Template_Balance += parseFloat(sumFsdTc) || 0;
+          } else {
+            // Otherwise, create a new entry
+            parsedTemplateBalance.push({
+              Template_Name: templateId || 'FNA',
+              BU: bu || 'FNA',
+              RESP: resp || 'FNA',
+              Template_Balance: parseFloat(sumFsdTc) || 0,
+            });
+          }
+        });
+    }
+  );
+
+  return parsedTemplateBalance;
+}
