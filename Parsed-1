@@ -27,3 +27,40 @@ const parsedTemplateBalance = Object.keys(templateBalanceTotal || {}).reduce(
   },
   {}
 );
+
+
+
+
+
+
+const parsedTemplateBalance = Object.keys(templateData.templates_balance_total || {}).reduce(
+  (acc: Record<string, ParsedTemplateBalance[]>, templateName: string) => {
+    const content = templateData.templates_balance_total[templateName]?.content;
+
+    // Ensure content exists and is a string
+    if (typeof content !== 'string') {
+      console.error(`Invalid or missing content for template: ${templateName}`, content);
+      acc[templateName] = []; // Assign an empty array for invalid/missing content
+      return acc;
+    }
+
+    // Parse valid content
+    const parsedRows = content
+      .trim() // Trim the content safely
+      .split('\n') // Split into rows
+      .slice(1) // Remove the header
+      .map((row: string) => {
+        const [templateId, bu, resp, sumFsdTc] = row.split(',');
+        return {
+          Template_Name: templateId || 'FNA',
+          BU: bu || 'FNA',
+          RESP: resp || 'FNA',
+          Template_Balance: parseFloat(sumFsdTc) || 0,
+        };
+      });
+
+    acc[templateName] = parsedRows;
+    return acc;
+  },
+  {}
+);
