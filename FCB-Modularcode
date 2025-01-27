@@ -1,0 +1,137 @@
+function parseTemplateBalanceData(templateData: any): any[] {
+  const parsedTemplateBalance = [];
+
+  // Iterate over each template in the template_balance_total object
+  Object.entries(templateData.templates_balance_total || {}).forEach(
+    ([templateName, { content }]: [string, any]) => {
+      // Ensure the content is a valid string before processing
+      if (typeof content !== 'string') {
+        console.error(`Invalid content for template: ${templateName}`);
+        return;
+      }
+
+      // Split content into rows, skipping the header row, and process each row
+      content
+        .trim() // Remove extra spaces
+        .split('\n') // Split into individual rows
+        .slice(1) // Remove the header row
+        .forEach((row: string) => {
+          // Split each row into columns and extract relevant fields
+          const [templateId, bu, resp, sumFsdTc] = row.split(',');
+
+          // Add parsed row to the final result array
+          parsedTemplateBalance.push({
+            Template_Name: templateId || 'FNA', // Default to 'FNA' if missing
+            BU: bu || 'FNA',
+            RESP: resp || 'FNA',
+            Template_Balance: parseFloat(sumFsdTc) || 0, // Parse the balance as a float
+          });
+        });
+    }
+  );
+
+  return parsedTemplateBalance; // Return the parsed data
+}
+
+
+
+
+function groupFcBalanceData(fcBalanceData: any[]): any[] {
+  // Reduce the raw data into grouped data
+  return Object.values(
+    fcBalanceData.reduce((acc, record) => {
+      // Create a unique key based on BU, RESP, Currency, and GL_Groups
+      const key = `${record.Business_Unit}_${record.Responsibility_Centre}_${record.Currency}_${record.GL_Groups}`;
+
+      // Initialize the group if it doesn't already exist
+      if (!acc[key]) {
+        acc[key] = {
+          Template_Name: record.Template_Id || 'FNA',
+          BU: record.Business_Unit,
+          RESP: record.Responsibility_Centre,
+          Currency: record.Currency || 'FNA',
+          GL_Groups: record.GL_Groups || 'FNA',
+          FC_Balance: 0, // Start with a balance of 0
+        };
+      }
+
+      // Sum up the FC balance for the group
+      acc[key].FC_Balance += parseFloat(record.TCA_Amount) || 0;
+
+      return acc; // Return the updated accumulator
+    }, {})
+  );
+}
+
+
+
+function mergeData(templateBalance: any[], fcBalance: any[]): any[] {
+  const finalData: any[] = [];
+
+  // Create a Map for quick lookup of FC balance records by BU and RESP
+  const fcBalanceMap = new Map(
+    fcBalance.map((record) => [`${record.BU}_${record.RESP}`, record])
+  );
+
+  // Process each row in the template balance data
+  templateBalance.forEach((templateRow) => {
+    const key = `${templateRow.BU}_${templateRow.RESP}`;
+    const fcRecord = fcBalanceMap.get(key); // Check for a matching FC balance record
+
+    if (fcRecord) {
+      // If a matching record exists, calculate variance and add to the final data
+      finalData.push({
+        Template_Name: templateRow.Template_Name,
+        BU: templateRow.BU,
+        RESP: templateRow.RESP,
+        Currency: fcRecord.Currency,
+        GL_Groups: fcRecord.GL_Groups,
+        Template_Balance: templateRow.Template_Balance,
+        FC_Balance: fcRecord.FC_Balance,
+        Variance: templateRow.Template_Balance - fcRecord.FC_Balance,
+      });
+      fcBalanceMap.delete(key); // Remove the processed record from the Map
+    } else {
+      // If no matching record exists, add the template row with FNA for missing fields
+      finalData.push({
+        Template_Name: templateRow.Template_Name,
+        BU: templateRow.BU,
+        RESP: templateRow.RESP,
+        Currency: 'FNA',
+        GL_Groups: 'FNA',
+        Template_Balance: templateRow.Template_Balance,
+        FC_Balance: 'FNA',
+        Variance: 'FNA',
+      });
+    }
+  });
+
+  // Add remaining unmatched FC balance records to the final data
+  fcBalanceMap.forEach((fcRecord) => {
+    finalData.push({
+      Template_Name: 'FNA',
+      BU: fcRecord.BU,
+      RESP: fcRecord.RESP,
+      Currency: fcRecord.Currency,
+      GL_Groups: fcRecord.GL_Groups,
+      Template_Balance: 'FNA',
+      FC_Balance: fcRecord.FC_Balance,
+      Variance: 'FNA',
+    });
+  });
+
+  return finalData; // Return the combined data
+}
+
+
+
+function processFCBalancesData(templateData: any, fcBalanceData: any[]): any[] {
+  // Step 1: Parse the template balance data
+  const templateBalance = parseTemplateBalanceData(templateData);
+
+  // Step 2: Group the FC balance data
+  const groupedFcBalance = groupFcBalanceData(fcBalanceData);
+
+  // Step 3: Merge both datasets
+  return mergeData(templateBalance, groupedFcBalance);
+}
