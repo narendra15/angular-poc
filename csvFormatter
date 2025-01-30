@@ -1,0 +1,7 @@
+function parseCSV(csvData) {
+  const rows = csvData.split(/\r?\n/);
+  return rows.map(row => {
+    const match = row.match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g);
+    return match ? match.map(field => field.replace(/^"|"$/g, '')) : [];
+  });
+}
