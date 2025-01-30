@@ -1,0 +1,67 @@
+processWithPreparerData(rows: any[]): any[] {
+    if (!Array.isArray(rows)) {
+        console.error('Invalid rows data for re-assigned processing:', rows);
+        return [];
+    }
+
+    console.log("Processes with preparer", rows);
+
+    // Step 1: Filter rows by status and valid roles
+    const filteredRows = rows.filter(row => 
+        (row.wt_status === 'assign' || row.wt_status === 'upload') &&
+        ['R', 'A', 'B'].includes(row.wt_to_role)
+    );
+
+    // Step 2: Create a map to store the latest row per template ID
+    const uniqueRowsMap = new Map<string, any>();
+
+    filteredRows.forEach(row => {
+        const templateId = row.wt_template_id;
+        const existingRow = uniqueRowsMap.get(templateId);
+
+        // Keep the latest record based on wt_ts
+        if (!existingRow || new Date(row.wt_ts).getTime() > new Date(existingRow.wt_ts).getTime()) {
+            uniqueRowsMap.set(templateId, row);
+        }
+    });
+
+    // Step 3: Convert the map values to an array
+    const uniqueRowsArray = Array.from(uniqueRowsMap.values());
+
+    // Step 4: Process and transform final data
+    const fromUserMap: { [key: string]: string } = {
+        P: 'Preparer',
+        R: 'Reviewer',
+        A: 'Attestor',
+        B: 'BP Team'
+    };
+
+    const processedData = uniqueRowsArray.map(row => {
+        const fromUser = fromUserMap[row.wt_from_role] || row.wt_from_role;
+        const toUser = fromUserMap[row.wt_to_role] || row.wt_to_role;
+
+        let reviewer = '';
+        let toUserRole = '';
+
+        if (row.wt_to_role === 'P') {
+            toUserRole = 'P';
+            reviewer = row.wt_to_user;
+        }
+
+        if (row.wt_from_role === 'P') {
+            reviewer = row.wt_from_user;
+        }
+
+        return {
+            template: row.wt_template_id,
+            reviewers: reviewer ? [reviewer] : [],
+            dateTime: row.wt_ts,
+            fromUser,
+            toUser,
+            toUserRole
+        };
+    });
+
+    console.log('Processed Re-Assigned Data', processedData);
+    return processedData;
+}
