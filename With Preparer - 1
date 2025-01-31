@@ -65,3 +65,68 @@ processWithPreparerData(rows: any[]): any[] {
     console.log('Processed Re-Assigned Data', processedData);
     return processedData;
 }
+
+
+
+
+
+//////
+
+
+
+filterByStatus(rows: any[], statusType: string): any[] {
+    if (!Array.isArray(rows)) {
+        console.error('Invalid rows data:', rows);
+        return [];
+    }
+
+    // Step 1: Filter records based on status type
+    let filteredRows = [];
+    
+    switch (statusType) {
+        case 'pendingReview':
+            filteredRows = rows.filter(row =>
+                row.wt_status === 'assign' && ['R'].includes(row.wt_to_role)
+            );
+            break;
+
+        case 'withPreparer':
+            filteredRows = rows.filter(row =>
+                (row.wt_status === 'assign' || row.wt_status === 'upload') &&
+                ['R', 'A', 'B'].includes(row.wt_to_role)
+            );
+            break;
+
+        case 'submitted':
+            filteredRows = rows.filter(row =>
+                row.wt_status === 'assign' &&
+                ['R', 'A', 'B'].includes(row.wt_to_role)
+            );
+            break;
+
+        case 'completed':
+            filteredRows = rows.filter(row =>
+                row.wt_status === 'approve'
+            );
+            break;
+
+        default:
+            return [];
+    }
+
+    // Step 2: Keep only the latest record per `wt_template_id` based on `wt_ts`
+    const latestRecordsMap = new Map<string, any>();
+
+    filteredRows.forEach(row => {
+        const templateId = row.wt_template_id;
+        const existingRow = latestRecordsMap.get(templateId);
+
+        // Retain the latest record based on `wt_ts`
+        if (!existingRow || new Date(row.wt_ts).getTime() > new Date(existingRow.wt_ts).getTime()) {
+            latestRecordsMap.set(templateId, row);
+        }
+    });
+
+    return Array.from(latestRecordsMap.values());
+}
+
