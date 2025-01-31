@@ -263,3 +263,37 @@ processWithPreparerData(rows: any[]): any[] {
         };
     });
 }
+
+
+/////////// Complated - attestor dashboard /////////////
+
+processesCompletedData(rows: any[]): any[] {
+    if (!Array.isArray(rows)) {
+        console.error('Invalid rows data for completed processing:', rows);
+        return [];
+    }
+
+    console.log("Processing completed widget data", rows);
+
+    // Step 1: Filter records where status is 'approve'
+    const filteredRows = rows.filter(row => row.wt_status === 'approve');
+
+    // Step 2: Group records by wt_template_id and select the latest by wt_ts
+    const latestRecordsMap = new Map<string, any>();
+    filteredRows.forEach(row => {
+        const templateId = row.wt_template_id;
+        if (!latestRecordsMap.has(templateId) || new Date(row.wt_ts) > new Date(latestRecordsMap.get(templateId).wt_ts)) {
+            latestRecordsMap.set(templateId, row);
+        }
+    });
+
+    // Step 3: Map the latest records to desired output format
+    const completedWidgetData = Array.from(latestRecordsMap.values()).map(row => ({
+        template: row.wt_template_id,
+        dateTimeCompleted: row.wt_ts
+    }));
+
+    console.log("Processed data for completed widget", completedWidgetData);
+    return completedWidgetData;
+}
+
