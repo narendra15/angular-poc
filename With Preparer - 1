@@ -130,3 +130,59 @@ filterByStatus(rows: any[], statusType: string): any[] {
     return Array.from(latestRecordsMap.values());
 }
 
+
+///////// Attestor Pending Review ////////////////
+
+processPendingReviewData(rows: any[]): any[] {
+    if (!Array.isArray(rows)) {
+        console.error('Invalid rows data for re-assigned processing:', rows);
+        return [];
+    }
+
+    console.log("Before filtering unique templates: ", rows.length, rows);
+
+    // Filter rows where wt_status is 'assign' and wt_to_role is 'A'
+    const filteredRows = rows.filter(row => 
+        row.wt_status === 'assign' && ['A'].includes(row.wt_to_role)
+    );
+
+    // Keep only the latest record per unique wt_template_id
+    const latestRecordsMap = new Map<string, any>();
+
+    filteredRows.forEach(row => {
+        const templateId = row.wt_template_id;
+        const existingRow = latestRecordsMap.get(templateId);
+
+        // Store the row if it's the first occurrence OR has a later timestamp
+        if (!existingRow || new Date(row.wt_ts).getTime() > new Date(existingRow.wt_ts).getTime()) {
+            latestRecordsMap.set(templateId, row);
+        }
+    });
+
+    // Convert map values back to array
+    const uniqueFilteredRows = Array.from(latestRecordsMap.values());
+
+    console.log("After filtering unique templates: ", uniqueFilteredRows.length, uniqueFilteredRows);
+
+    // Map the final unique filtered records
+    const reAssignedData = uniqueFilteredRows.map(row => {
+        const fromUserMap: { [key: string]: string } = {
+            P: 'Preparer',
+            R: 'Reviewer',
+            A: 'Attestor',
+            B: 'BP Team'
+        };
+
+        const fromUser = fromUserMap[row.wt_from_role] || row.wt_from_role;
+        const toUser = fromUserMap[row.wt_to_role] || row.wt_to_role;
+
+        return {
+            template: row.wt_template_id,
+            comments: row.wt_notes || '',
+            dateTime: row.wt_ts
+        };
+    });
+
+    console.log("Processed Re-Assigned Data:", reAssignedData);
+    return reAssignedData;
+}
