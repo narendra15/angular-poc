@@ -299,16 +299,16 @@ processesCompletedData(rows: any[]): any[] {
 
 //////////////// Submitted data - attestor dashboard ////////////
 
-processesCompletedData(rows: any[]): any[] {
+processSubmittedData(rows: any[]): any[] {
     if (!Array.isArray(rows)) {
-        console.error('Invalid rows data for completed processing:', rows);
+        console.error('Invalid rows data for submitted processing:', rows);
         return [];
     }
 
-    console.log("Processing completed widget data", rows);
+    console.log("Processing submitted widget data", rows);
 
-    // Step 1: Filter records where status is 'approve'
-    const filteredRows = rows.filter(row => row.wt_status === 'approve');
+    // Step 1: Filter records where status is 'assign' and role is 'B'
+    const filteredRows = rows.filter(row => row.wt_status === 'assign' && ['B'].includes(row.wt_to_role));
 
     // Step 2: Group records by wt_template_id and select the latest by wt_ts
     const latestRecordsMap = new Map<string, any>();
@@ -320,11 +320,40 @@ processesCompletedData(rows: any[]): any[] {
     });
 
     // Step 3: Map the latest records to desired output format
-    const completedWidgetData = Array.from(latestRecordsMap.values()).map(row => ({
-        template: row.wt_template_id,
-        dateTimeCompleted: row.wt_ts
-    }));
+    const submittedData = Array.from(latestRecordsMap.values()).map(row => {
+        let currentStage = 0;
+        let toUser = "Preparer";
 
-    console.log("Processed data for completed widget", completedWidgetData);
-    return completedWidgetData;
+        switch (row.wt_to_role) {
+            case 'R':
+                currentStage = 1;
+                toUser = "Reviewer";
+                break;
+            case 'A':
+                currentStage = 2;
+                toUser = "Attestor";
+                break;
+            case 'B':
+                currentStage = 3;
+                toUser = "BP Team";
+                break;
+        }
+
+        return {
+            steps: [
+                "VOS Captured",
+                "Submitted for Review",
+                "Submitted for Attestation",
+                "Pending for Signoff"
+            ],
+            currentStage,
+            template: row.wt_template_id,
+            comments: row.wt_notes || "No comments available", // Handle empty comments
+            toUser,
+            dateTime: row.wt_ts
+        };
+    });
+
+    console.log("Processed Submitted Data:", submittedData);
+    return submittedData;
 }
