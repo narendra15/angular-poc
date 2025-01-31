@@ -186,3 +186,80 @@ processPendingReviewData(rows: any[]): any[] {
     console.log("Processed Re-Assigned Data:", reAssignedData);
     return reAssignedData;
 }
+
+
+///// with preparer attestor - in attestor dashboard ///////
+
+processWithPreparerData(rows: any[]): any[] {
+    if (!Array.isArray(rows)) {
+        console.error('Invalid rows data for re-assigned processing:', rows);
+        return [];
+    }
+
+    console.log("Processes with preparer", rows);
+
+    // Step 1: Filter records where status is 'assign' or 'upload'
+    const filteredRows = rows.filter(row =>
+        (row.wt_status === 'assign' || row.wt_status === 'upload') &&
+        ['A', 'B'].includes(row.wt_to_role)
+    );
+
+    // Step 2: Group records by wt_template_id and select the latest by wt_ts
+    const latestRecordsMap = new Map<string, any>();
+    filteredRows.forEach(row => {
+        const templateId = row.wt_template_id;
+        if (!latestRecordsMap.has(templateId) || new Date(row.wt_ts) > new Date(latestRecordsMap.get(templateId).wt_ts)) {
+            latestRecordsMap.set(templateId, row);
+        }
+    });
+
+    // Step 3: Map the latest records to desired output format
+    return Array.from(latestRecordsMap.values()).map(row => {
+        let currentStage = 0;
+        let toUser = "Preparer";
+        let fromUser = "";
+
+        if (row.wt_from_role === 'P' && row.wt_to_role === '') {
+            fromUser = '-';
+        }
+
+        switch (row.wt_to_role) {
+            case 'R':
+                currentStage = 1;
+                toUser = 'Reviewer';
+                break;
+            case 'A':
+                currentStage = 2;
+                toUser = 'Attestor';
+                break;
+            case 'B':
+                currentStage = 3;
+                toUser = 'BP Team';
+                break;
+            case 'P':
+                currentStage = 0;
+                toUser = 'Re-Assign';
+                break;
+        }
+
+        if (row.wt_from_role === 'P' && row.wt_to_role === '') {
+            currentStage = 0;
+        }
+
+        return {
+            steps: [
+                'VOS Captured',
+                'Submitted for Review',
+                'Submitted for Attestation',
+                'Pending for Signoff'
+            ],
+            currentStage: currentStage,
+            template: row.wt_template_id,
+            comments: row.wt_notes || '', // Handle empty comments
+            toUser: toUser,
+            from_role: row.wt_from_role,
+            dateTime: row.wt_ts,
+            to_role: row.wt_to_role
+        };
+    });
+}
