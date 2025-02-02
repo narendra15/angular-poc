@@ -1,0 +1,82 @@
+interface WorkflowRecord {
+    template_id: string;
+    status: string;
+    role: string;
+    updated_ts: string; // Timestamp for sorting
+}
+
+interface UserDatabaseRecord {
+    template_id: string;
+}
+
+interface WorkflowMetrics {
+    TNTUD: number;
+    TNTWT: number;
+    NTR: number;
+    NTRRecords: WorkflowRecord[];
+    NTA: number;
+    NTARecords: WorkflowRecord[];
+    NTB: number;
+    NTBRecords: WorkflowRecord[];
+    PS: number;
+    PSRecords: WorkflowRecord[];
+    PNS: number;
+    PNSRecords: UserDatabaseRecord[];
+    TotalPreparerAssigned: number;
+}
+
+function processWorkflowMetrics(userDatabase: UserDatabaseRecord[], workflowTracker: WorkflowRecord[]): WorkflowMetrics {
+    // Step 1: Get distinct templates count from User Database
+    const uniqueUserTemplates = new Set(userDatabase.map(record => record.template_id));
+    const TNTUD = uniqueUserTemplates.size;
+
+    // Step 2: Get distinct templates count from Workflow Tracker
+    const uniqueWorkflowTemplates = new Set(workflowTracker.map(record => record.template_id));
+    const TNTWT = uniqueWorkflowTemplates.size;
+
+    // Step 3: Get the latest record per template (sorted by timestamp)
+    const latestRecords = Object.values(
+        workflowTracker
+            .sort((a, b) => new Date(b.updated_ts).getTime() - new Date(a.updated_ts).getTime()) // Sort latest first
+            .reduce((acc, record) => {
+                if (!acc[record.template_id]) {
+                    acc[record.template_id] = record; // Store only the latest record per template
+                }
+                return acc;
+            }, {} as Record<string, WorkflowRecord>)
+    );
+
+    // Step 4: Classify records based on their roles and status
+    const NTRRecords = latestRecords.filter(record => record.status === 'ASSIGNED' && record.role === 'R');
+    const NTARecords = latestRecords.filter(record => record.status === 'ASSIGNED' && record.role === 'A');
+    const NTBRecords = latestRecords.filter(record => record.status === 'ASSIGNED' && record.role === 'B');
+
+    // Step 5: Count templates assigned to different roles
+    const NTR = NTRRecords.length;
+    const NTA = NTARecords.length;
+    const NTB = NTBRecords.length;
+
+    // Step 6: Identify Preparer Started (PS) templates
+    const PSRecords = latestRecords.filter(record =>
+        ["ASSIGNED", "REASSIGNED", "UPLOAD", "NOTES"].includes(record.status)
+    );
+    const PS = PSRecords.length;
+
+    // Step 7: Identify Preparer Not Started (PNS) templates
+    const PNSRecords = userDatabase.filter(record => !uniqueWorkflowTemplates.has(record.template_id));
+    const PNS = PNSRecords.length;
+
+    // Step 8: Calculate Total Templates assigned to Preparer
+    const TotalPreparerAssigned = PNS + PS;
+
+    return {
+        TNTUD, // Total templates in User DB
+        TNTWT, // Total templates in Workflow Tracker
+        NTR, NTRRecords, // Templates assigned to Reviewer
+        NTA, NTARecords, // Templates assigned to Attestor
+        NTB, NTBRecords, // Templates assigned to BPT
+        PS, PSRecords, // Preparer Started (with statuses "ASSIGNED", "REASSIGNED", "UPLOAD", "NOTES")
+        PNS, PNSRecords, // Preparer Not Started
+        TotalPreparerAssigned // Total templates assigned to Preparer
+    };
+}
