@@ -80,3 +80,45 @@ function processWorkflowMetrics(userDatabase: UserDatabaseRecord[], workflowTrac
         TotalPreparerAssigned // Total templates assigned to Preparer
     };
 }
+
+
+
+
+
+
+
+
+import { processWorkflowMetrics, ProcessedWorkflowMetrics } from 'src/utils/workflow-utils';
+
+export class PreDashboardComponent {
+  fetchWorkflowData(userDatabase: any[], workflowTracker: any[]): void {
+    const {
+      latestRecords,
+      NTRRecords,
+      NTARecords,
+      NTBRecords,
+      Completed,
+      PSRecords,
+      PNSRecords,
+      TotalPreparerAssigned
+    }: ProcessedWorkflowMetrics = processWorkflowMetrics(userDatabase, workflowTracker);
+
+    // Use the processed data
+    this.withPreparerData = this.procesWithPreparerData([...PSRecords]);
+    this.filterDataWithPrep = [...this.withPreparerData];
+    this.submittedData = this.processSubmittedData([...NTARecords, ...NTBRecords]);
+    this.filteredData = [...this.submittedData];
+    this.completedData = [...Completed];
+
+    console.log('Processed Workflow Metrics:', {
+      latestRecords,
+      NTRRecords,
+      NTARecords,
+      NTBRecords,
+      Completed,
+      PSRecords,
+      PNSRecords,
+      TotalPreparerAssigned,
+    });
+  }
+}
