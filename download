@@ -17,3 +17,16 @@ onDownload() {
     console.error('Error downloading file:', error);
   });
 }
+
+
+
+this.http.get(url, { responseType: 'blob' as 'blob' }).subscribe(blob => {
+  const a = document.createElement('a');
+  const objectUrl = URL.createObjectURL(blob);
+  a.href = objectUrl;
+  a.download = 'filename.pdf'; // Change accordingly
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(objectUrl);
+});
