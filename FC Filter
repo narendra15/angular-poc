@@ -1,0 +1,44 @@
+import { Component } from '@angular/core';
+import { MatTableDataSource } from '@angular/material/table';
+
+export interface DataRow {
+  Template_Name: string;
+  BU: string;
+  RESP: string;
+  Currency: string;
+  FC_Balance: number;
+  GL_Groups: string;
+  Template_Balance: string;
+  Variance: number;
+}
+
+const ELEMENT_DATA: DataRow[] = [
+  { Template_Name: "BU3960_FCCP_LP", BU: "03960", RESP: "F4002", Currency: "USD", FC_Balance: 0, GL_Groups: "64", Template_Balance: "16,572", Variance: 16572 },
+  { Template_Name: "BU3960_FCCP_GP", BU: "03960", RESP: "H6974", Currency: "USD", FC_Balance: 0, GL_Groups: "64", Template_Balance: "10,000", Variance: 10000 },
+  { Template_Name: "BU3962_BI", BU: "03962", RESP: "F8617", Currency: "USD", FC_Balance: 0, GL_Groups: "64", Template_Balance: "8,500", Variance: 8500 },
+  { Template_Name: "BU1000_CM", BU: "01000", RESP: "G5443", Currency: "USD", FC_Balance: 0, GL_Groups: "64", Template_Balance: "1,200", Variance: 1200 },
+  { Template_Name: "BU1000_CM", BU: "01000", RESP: "G6474", Currency: "USD", FC_Balance: 0, GL_Groups: "64", Template_Balance: "400", Variance: 400 },
+  { Template_Name: "BU1000_CM", BU: "01000", RESP: "T9530", Currency: "USD", FC_Balance: 0, GL_Groups: "64", Template_Balance: "200", Variance: 200 }
+];
+
+@Component({
+  selector: 'app-table-filter-sort',
+  templateUrl: './table-filter-sort.component.html',
+  styleUrls: ['./table-filter-sort.component.css']
+})
+export class TableFilterSortComponent {
+  displayedColumns: string[] = ['Template_Name', 'BU', 'RESP', 'Variance'];
+  dataSource = new MatTableDataSource(ELEMENT_DATA);
+
+  threshold: number = 500; // Set the threshold value
+
+  constructor() {
+    this.applyThresholdAndSort();
+  }
+
+  applyThresholdAndSort() {
+    this.dataSource.data = ELEMENT_DATA
+      .filter(row => row.Variance > this.threshold) // Filter based on threshold
+      .sort((a, b) => a.Variance - b.Variance); // Sort in ascending order
+  }
+}
