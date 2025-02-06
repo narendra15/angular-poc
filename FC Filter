@@ -1,5 +1,6 @@
-import { Component } from '@angular/core';
+import { Component, ViewChild } from '@angular/core';
 import { MatTableDataSource } from '@angular/material/table';
+import { MatSort } from '@angular/material/sort';
 
 export interface DataRow {
   Template_Name: string;
@@ -29,16 +30,52 @@ const ELEMENT_DATA: DataRow[] = [
 export class TableFilterSortComponent {
   displayedColumns: string[] = ['Template_Name', 'BU', 'RESP', 'Variance'];
   dataSource = new MatTableDataSource(ELEMENT_DATA);
+  filteredDataSource = new MatTableDataSource(ELEMENT_DATA);
 
-  threshold: number = 500; // Set the threshold value
+  searchInput: string = ''; // User search input
+  threshold: number = 500; // Variance threshold
+  filterTags: string[] = []; // Search filter tags
 
-  constructor() {
-    this.applyThresholdAndSort();
+  @ViewChild(MatSort) sort!: MatSort;
+
+  ngAfterViewInit() {
+    this.dataSource.sort = this.sort;
+    this.filteredDataSource.sort = this.sort;
   }
 
+  // Apply threshold filter and sort
   applyThresholdAndSort() {
-    this.dataSource.data = ELEMENT_DATA
-      .filter(row => row.Variance > this.threshold) // Filter based on threshold
-      .sort((a, b) => a.Variance - b.Variance); // Sort in ascending order
+    let filteredData = ELEMENT_DATA.filter(row => row.Variance > this.threshold);
+    this.filteredDataSource.data = filteredData.sort((a, b) => a.Variance - b.Variance);
+  }
+
+  // Add filter tag and apply filter
+  addFilterTag() {
+    const value = this.searchInput.trim().toLowerCase();
+    if (value && !this.filterTags.includes(value)) {
+      this.filterTags.push(value);
+      this.applyFilters();
+    }
+    this.searchInput = '';
+  }
+
+  // Remove a filter tag and update data
+  removeFilterTag(tag: string) {
+    this.filterTags = this.filterTags.filter(t => t !== tag);
+    this.applyFilters();
+  }
+
+  // Apply filters based on search tags
+  applyFilters() {
+    if (this.filterTags.length === 0) {
+      this.filteredDataSource.data = ELEMENT_DATA; // Reset to original data
+      return;
+    }
+
+    this.filteredDataSource.data = ELEMENT_DATA.filter(row =>
+      this.filterTags.some(tag =>
+        Object.values(row).some(val => val.toString().toLowerCase().includes(tag))
+      )
+    );
   }
 }
