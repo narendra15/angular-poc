@@ -1,0 +1,59 @@
+parseTemplateBalanceData(templateData: any): any[] {
+    const parsedTemplateBalance: any[] = [];
+
+    Object.entries(templateData.templates_balance_total || {}).forEach(([templateName, { content }]: [string, any]) => {
+        if (typeof content !== 'string') {
+            console.log(`Invalid content for template: ${templateName}`);
+            return;
+        }
+
+        const rows = content.trim().split('\n');
+        if (rows.length < 2) return; // Skip if no data rows
+
+        const headers = rows[0].split(',').map((h) => h.trim()); // Extract header row
+        const dataRows = rows.slice(1); // Remove header row
+
+        // Define expected columns and their default values
+        const expectedColumns = ['fsd_template_id', 'fsd_bu', 'fsd_resp', 'fsd_curr', 'cgg_gl_group', 'sum_fsd_tc'];
+        const columnIndices: Record<string, number> = {};
+
+        // Map the incoming headers to expected column indices
+        expectedColumns.forEach((col) => {
+            columnIndices[col] = headers.indexOf(col); // Store index if present, otherwise -1
+        });
+
+        dataRows.forEach((row: string) => {
+            const values = row.split(',');
+
+            // Extract values dynamically based on column indices, handling missing fields
+            const templateId = columnIndices['fsd_template_id'] !== -1 ? values[columnIndices['fsd_template_id']] : 'FNA';
+            const bu = columnIndices['fsd_bu'] !== -1 ? values[columnIndices['fsd_bu']] : 'FNA';
+            const resp = columnIndices['fsd_resp'] !== -1 ? values[columnIndices['fsd_resp']] : 'FNA';
+            const currency = columnIndices['fsd_curr'] !== -1 ? values[columnIndices['fsd_curr']] : 'FNA';
+            const glGroup = columnIndices['cgg_gl_group'] !== -1 ? values[columnIndices['cgg_gl_group']] : 'FNA';
+            const sumFsdTc = columnIndices['sum_fsd_tc'] !== -1 ? parseFloat(values[columnIndices['sum_fsd_tc']]) || 0 : 0;
+
+            // Check if an entry with the same BU, RESP, GL_Group, and Currency already exists
+            const existingEntry = parsedTemplateBalance.find(
+                (entry) => entry.BU === bu && entry.RESP === resp && entry.GL_Groups === glGroup && entry.Currency === currency
+            );
+
+            if (existingEntry) {
+                // If exists, sum up the Template_Balance
+                existingEntry.Template_Balance += sumFsdTc;
+            } else {
+                // Otherwise, create a new entry
+                parsedTemplateBalance.push({
+                    Template_Name: templateId || 'FNA',
+                    BU: bu || 'FNA',
+                    RESP: resp || 'FNA',
+                    Currency: currency || 'FNA',
+                    GL_Groups: glGroup || 'FNA',
+                    Template_Balance: sumFsdTc,
+                });
+            }
+        });
+    });
+
+    return parsedTemplateBalance;
+}
