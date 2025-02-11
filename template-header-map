@@ -109,3 +109,51 @@ parseTemplateBalanceData(templateData: any): any[] {
 
     return parsedTemplateBalance;
 }
+
+/////
+
+
+function parseTemplateBalanceData(templateData: any): any[] {
+    const parsedTemplateBalance: any[] = [];
+
+    Object.entries(templateData.templates_balance_total || {}).forEach(([templateName, { content }]: [string, any]) => {
+        if (typeof content !== 'string') {
+            console.log(`Invalid content for template: ${templateName}`);
+            return;
+        }
+
+        const rows = content.trim().split('\n');
+        const headers = rows[0].split(',');
+
+        rows.slice(1).forEach((row: string) => {
+            const values = row.split(',');
+
+            // Simplified getValue function
+            const getValue = (column: string, fallback: string | number = 'FNA') =>
+                (headers.indexOf(column) !== -1 ? values[headers.indexOf(column)] : fallback) || fallback;
+
+            const entry = {
+                Template_Name: getValue('fsd_template_id'),
+                BU: getValue('fsd_bu'),
+                RESP: getValue('fsd_resp'),
+                GL_Groups: getValue('cgg_gl_group'),
+                Currency: getValue('fsd_curr'),
+                Template_Balance: parseFloat(getValue('sum_fsd_tc', 0) as string) // Ensuring number format
+            };
+
+            // Check if an entry with the same BU, RESP, GL_Groups, and Currency exists
+            const existingEntry = parsedTemplateBalance.find(
+                (e) => e.BU === entry.BU && e.RESP === entry.RESP && e.GL_Groups === entry.GL_Groups && e.Currency === entry.Currency
+            );
+
+            if (existingEntry) {
+                existingEntry.Template_Balance += entry.Template_Balance;
+            } else {
+                parsedTemplateBalance.push(entry);
+            }
+        });
+    });
+
+    return parsedTemplateBalance;
+}
+
