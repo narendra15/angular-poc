@@ -57,3 +57,55 @@ parseTemplateBalanceData(templateData: any): any[] {
 
     return parsedTemplateBalance;
 }
+
+
+
+//////
+
+
+parseTemplateBalanceData(templateData: any): any[] {
+    const parsedTemplateBalance: any[] = [];
+
+    Object.entries(templateData.templates_balance_total || {}).forEach(([templateName, { content }]: [string, any]) => {
+        if (typeof content !== 'string') {
+            console.log(`Invalid content for template: ${templateName}`);
+            return;
+        }
+
+        const rows = content.trim().split('\n');
+        if (rows.length < 2) return; // Skip if there's no data
+
+        const headers = rows[0].split(',').map((h) => h.trim()); // Extract headers
+        const dataRows = rows.slice(1); // Remove header row
+
+        // Expected headers in order
+        const expectedHeaders = ['fsd_template_id', 'fsd_bu', 'fsd_resp', 'fsd_curr', 'cgg_gl_group', 'sum_fsd_tc'];
+
+        dataRows.forEach((row: string) => {
+            const values = row.split(',');
+
+            // Ensure missing columns are handled
+            const record = {
+                Template_Name: values[headers.indexOf('fsd_template_id')] || 'FNA',
+                BU: values[headers.indexOf('fsd_bu')] || 'FNA',
+                RESP: values[headers.indexOf('fsd_resp')] || 'FNA',
+                Currency: values[headers.indexOf('fsd_curr')] || 'FNA',
+                GL_Groups: values[headers.indexOf('cgg_gl_group')] || 'FNA',
+                Template_Balance: parseFloat(values[headers.indexOf('sum_fsd_tc')]) || 0
+            };
+
+            // Find if a similar record exists (BU, RESP, GL, Currency match)
+            const existingEntry = parsedTemplateBalance.find(
+                (entry) => entry.BU === record.BU && entry.RESP === record.RESP && entry.GL_Groups === record.GL_Groups && entry.Currency === record.Currency
+            );
+
+            if (existingEntry) {
+                existingEntry.Template_Balance += record.Template_Balance; // Sum the balance
+            } else {
+                parsedTemplateBalance.push(record);
+            }
+        });
+    });
+
+    return parsedTemplateBalance;
+}
