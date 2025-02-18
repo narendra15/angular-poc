@@ -1,0 +1,24 @@
+import { Injectable, inject } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { firstValueFrom } from 'rxjs';
+
+@Injectable({
+  providedIn: 'root'
+})
+export class InitService {
+  private http = inject(HttpClient);
+  private config: any;
+
+  async loadConfig() {
+    try {
+      this.config = await firstValueFrom(this.http.get('/api/init-data'));
+      console.log('App initialized with:', this.config);
+    } catch (error) {
+      console.error('Initialization failed', error);
+    }
+  }
+
+  getConfig() {
+    return this.config;
+  }
+}
