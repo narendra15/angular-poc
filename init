@@ -22,3 +22,42 @@ export class InitService {
     return this.config;
   }
 }
+
+
+
+import { bootstrapApplication } from '@angular/platform-browser';
+import { provideHttpClient } from '@angular/common/http';
+import { provideRouter } from '@angular/router';
+import { provideAnimations } from '@angular/platform-browser/animations';
+import { provideStore } from '@ngrx/store';
+import { provideEffects } from '@ngrx/effects';
+
+import { appConfig } from './app/app.config';
+import { AppComponent } from './app/app.component';
+import { routes } from './app/app.routes';
+
+import { InitService } from './app/init.service';
+import { headerReducer } from './app/shared/services/ngrx-store/header/header.reducer';
+import { templateReducer } from './app/pages/preparer-landing/services/ngrx-store/template/template.reducer';
+import { TemplateEffects } from './app/pages/preparer-landing/services/ngrx-store/template/template.effects';
+import { provideInitializer } from '@angular/core';
+
+bootstrapApplication(AppComponent, {
+  ...appConfig,
+  providers: [
+    provideHttpClient(),
+    provideAnimations(),
+    provideRouter(routes),
+    provideStore({
+      headerState: headerReducer,
+      template: templateReducer,
+    }),
+    provideEffects(TemplateEffects),
+    
+    // Ensure API call happens before bootstrap
+    provideInitializer(async () => {
+      const initService = new InitService();
+      await initService.loadConfig();
+    }),
+  ],
+}).catch(err => console.error(err));
