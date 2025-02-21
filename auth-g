@@ -1,0 +1,40 @@
+import { inject } from '@angular/core';
+import { CanActivateFn, Router } from '@angular/router';
+import { map, take, from, switchMap } from 'rxjs';
+import { AuthService } from './auth.service';
+
+const roleRoutes: Record<string, string> = {
+  P: '/preparer/',
+  R: '/reviewer/',
+  A: '/attestor/',
+  B: '/bpt/',
+};
+
+export const authGuard: CanActivateFn = (route, state) => {
+  console.log('Inside auth guard');
+
+  const _authService = inject(AuthService); // Inject the AuthService
+  const router = inject(Router); // Inject the Router
+  const requiredRole = route.data['roles'] as Array<string>; // Get allowed roles from route data
+  console.log('requiredRole', requiredRole);
+
+  return from(_authService.loadDefaultRole()).pipe( // Convert async function to Observable
+    switchMap(() =>
+      _authService.selectedRole$.pipe(
+        take(1),
+        map((userRole: string) => {
+          console.log('inside role', userRole);
+          if (userRole === requiredRole[0]) {
+            return true;
+          }
+
+          // If role does not match, navigate to a different page
+          const route = roleRoutes[userRole];
+          console.log("Route", route);
+          router.navigate([route]);
+          return false;
+        })
+      )
+    )
+  );
+};
