@@ -1,0 +1,49 @@
+import { Injectable } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { BehaviorSubject } from 'rxjs';
+
+@Injectable({
+  providedIn: 'root'
+})
+export class AuthService {
+  private jsonUrl = 'assets/dummyData.json'; // Path to JSON file
+  private selectedRole = new BehaviorSubject<string>(''); // Initialize as empty
+  selectedRole$ = this.selectedRole.asObservable();
+
+  private userRoles = [
+    { key: 'P', value: 'Preparer' },
+    { key: 'R', value: 'Reviewer' },
+    { key: 'A', value: 'Attestor' },
+    { key: 'B', value: 'BP Team' }
+  ];
+
+  constructor(private http: HttpClient) {
+    this.loadDefaultRole(); // Load role from JSON
+  }
+
+  private loadDefaultRole(): void {
+    this.http.get<any>(this.jsonUrl).subscribe(data => {
+      if (data && data.current_user_role) {
+        this.selectedRole.next(data.current_user_role); // Set role dynamically
+      } else {
+        this.selectedRole.next('P'); // Default to 'P' if JSON is missing data
+      }
+    });
+  }
+
+  getUserRole(): string | null {
+    return this.selectedRole.getValue();
+  }
+
+  setUserRole(role: string) {
+    this.selectedRole.next(role);
+  }
+
+  isAuthenticated(): boolean {
+    return !!this.selectedRole.getValue();
+  }
+
+  listUserRoles(): any[] {
+    return this.userRoles;
+  }
+}
