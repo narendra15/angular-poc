@@ -47,3 +47,76 @@ export class AuthService {
     return this.userRoles;
   }
 }
+
+
+
+///////
+
+
+import { Injectable } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { BehaviorSubject } from 'rxjs';
+
+@Injectable({
+  providedIn: 'root'
+})
+export class AuthService {
+  private jsonUrl = 'assets/dummyData.json'; // Path to JSON file
+  private selectedRole = new BehaviorSubject<string>('P'); // Default role
+  selectedRole$ = this.selectedRole.asObservable();
+  
+  private userRoles = new BehaviorSubject<{ key: string; value: string }[]>([]); // Dynamic roles
+  userRoles$ = this.userRoles.asObservable(); // Observable to use in components
+
+  constructor(private http: HttpClient) {
+    this.loadDefaultRole(); // Load user role and roles dynamically
+  }
+
+  private loadDefaultRole(): void {
+    this.http.get<any>(this.jsonUrl).subscribe(data => {
+      if (data && data.data) {
+        // Set the current user role from JSON
+        if (data.data.current_user_role) {
+          this.selectedRole.next(data.data.current_user_role);
+        }
+
+        // Populate userRoles dynamically from user_roles array
+        if (data.data.user_roles && Array.isArray(data.data.user_roles)) {
+          const rolesArray = data.data.user_roles.map(role => ({
+            key: role,
+            value: this.getRoleName(role) // Get role name dynamically
+          }));
+          this.userRoles.next(rolesArray);
+        }
+      }
+    });
+  }
+
+  getUserRole(): string | null {
+    return this.selectedRole.getValue();
+  }
+
+  setUserRole(role: string) {
+    this.selectedRole.next(role);
+  }
+
+  isAuthenticated(): boolean {
+    return !!this.selectedRole.getValue();
+  }
+
+  listUserRoles() {
+    return this.userRoles$;
+  }
+
+  // Function to map role keys to user-friendly role names
+  private getRoleName(role: string): string {
+    const roleNames: { [key: string]: string } = {
+      P: 'Preparer',
+      R: 'Reviewer',
+      A: 'Attestor',
+      B: 'BP Team'
+    };
+    return roleNames[role] || 'Unknown';
+  }
+}
+
