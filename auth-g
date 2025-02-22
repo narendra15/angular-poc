@@ -122,3 +122,48 @@ export const authGuard: CanActivateFn = (route, state) => {
     })
   );
 };
+
+
+//////////////************
+
+
+import { inject } from '@angular/core';
+import { CanActivateFn, Router } from '@angular/router';
+import { firstValueFrom } from 'rxjs';
+import { AuthService } from './auth.service';
+
+const roleRoutes: Record<string, string> = {
+  P: '/preparer',
+  R: '/reviewer',
+  A: '/attestor',
+  B: '/bpt',
+};
+
+export const authGuard: CanActivateFn = async (route, state) => {
+  console.log('Inside auth guard');
+  const _authService = inject(AuthService);
+  const router = inject(Router);
+  const requiredRoles = route.data?.roles as Array<string> || [];
+
+  console.log('Required Role:', requiredRoles);
+
+  try {
+    // Wait for user role to be fetched before proceeding
+    const userRole = await firstValueFrom(_authService.selectedRoles);
+
+    console.log('User Role:', userRole);
+
+    if (requiredRoles.includes(userRole)) {
+      return true;
+    }
+
+    const redirectRoute = roleRoutes[userRole] || '/';
+    router.navigate([redirectRoute]);
+    return false;
+  } catch (error) {
+    console.error('Auth Guard Error:', error);
+    router.navigate(['/']);
+    return false;
+  }
+};
+
