@@ -84,3 +84,41 @@ export const authGuard: CanActivateFn = async (route, state) => {
   }
 };
 
+
+//////
+
+
+import { inject } from '@angular/core';
+import { CanActivateFn, Router } from '@angular/router';
+import { switchMap, filter, take, tap } from 'rxjs/operators'; // Import necessary operators
+import { of } from 'rxjs'; // Import 'of'
+import { AuthService } from './auth.service';
+
+// ... (rest of your code)
+
+export const authGuard: CanActivateFn = (route, state) => {
+  const authService = inject(AuthService);
+  const router = inject(Router);
+  const requiredRole = route.data['roles'] as Array<string>;
+
+  return authService.selectedRole$.pipe(
+    filter(userRole => userRole !== null && userRole !== undefined), // Wait for role to be available
+    take(1), // Take only the first emitted value (after it's available)
+    switchMap((userRole: string) => { // Use switchMap to handle role-based navigation
+      if (!userRole || !requiredRole.includes(userRole)) {
+        // Redirect to appropriate route or show error
+        const route = roleRoutes[userRole] || '/unauthorized'; // Default unauthorized route
+        router.navigate([route]);
+        return of(false); // Return an Observable of false to block navigation
+      } else {
+        return of(true); // User has the required role, allow navigation
+      }
+    }),
+    tap(allowed => {
+      if (!allowed) {
+        // Optional: Log or handle unauthorized access
+        console.warn('Unauthorized access attempt.');
+      }
+    })
+  );
+};
