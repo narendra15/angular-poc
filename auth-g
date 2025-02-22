@@ -38,3 +38,49 @@ export const authGuard: CanActivateFn = (route, state) => {
     )
   );
 };
+
+
+///////////
+
+
+import { inject } from '@angular/core';
+import { CanActivateFn, Router } from '@angular/router';
+import { firstValueFrom } from 'rxjs';
+import { AuthService } from './auth.service';
+
+const roleRoutes: Record<string, string> = {
+  P: '/preparer/',
+  R: '/reviewer/',
+  A: '/attestor/',
+  B: '/bpt/',
+};
+
+export const authGuard: CanActivateFn = async (route, state) => {
+  console.log('Inside auth guard');
+
+  const _authService = inject(AuthService); // Inject the AuthService
+  const router = inject(Router); // Inject the Router
+  const requiredRole = route.data['roles'] as Array<string>; // Get allowed roles from route data
+  console.log('requiredRole', requiredRole);
+
+  try {
+    await _authService.loadDefaultRole(); // Ensure this completes before moving forward
+    const userRole = await firstValueFrom(_authService.selectedRole$); // Extract role from Observable
+    console.log('inside role', userRole);
+
+    if (requiredRole.includes(userRole)) {
+      return true; // Allow navigation
+    }
+
+    // If role does not match, redirect to the appropriate route
+    const routeToNavigate = roleRoutes[userRole] || '/default';
+    console.log("Route", routeToNavigate);
+    await router.navigate([routeToNavigate]);
+
+    return false; // Block navigation after redirect
+  } catch (error) {
+    console.error("Error in authGuard:", error);
+    return false; // If any error occurs, block navigation
+  }
+};
+
