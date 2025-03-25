@@ -1,0 +1,99 @@
+import { Component, Input } from '@angular/core';
+
+@Component({
+  selector: 'app-accordion-panel',
+  standalone: true,
+  template: `
+    <div class="accordion-panel">
+      <div class="header" (click)="toggle()">
+        <strong>{{ title }}</strong>
+        <span *ngIf="count !== undefined" class="count">({{ count }})</span>
+        <span class="toggle-icon">{{ isOpen ? '-' : '+' }}</span>
+      </div>
+      <div class="content" *ngIf="isOpen">
+        <ng-content></ng-content>
+      </div>
+    </div>
+  `,
+  styles: [`
+    .accordion-panel {
+      border: 1px solid #ccc;
+      margin-bottom: 8px;
+      border-radius: 4px;
+    }
+    .header {
+      padding: 10px;
+      background: #f1f1f1;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .content {
+      padding: 10px;
+      background: #fff;
+    }
+    .count {
+      margin-left: 6px;
+      font-weight: normal;
+    }
+    .toggle-icon {
+      font-weight: bold;
+      font-size: 18px;
+    }
+  `]
+})
+export class AccordionPanelComponent {
+  @Input() title!: string;
+  @Input() count?: number;
+
+  isOpen = false;
+
+  toggle() {
+    this.isOpen = !this.isOpen;
+  }
+}
+
+
+
+import { Component } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { AccordionPanelComponent } from './accordion-panel.component';
+
+@Component({
+  selector: 'app-accordion',
+  standalone: true,
+  imports: [CommonModule, AccordionPanelComponent],
+  template: `
+    <ng-content></ng-content>
+  `
+})
+export class AccordionComponent {}
+
+
+
+<app-accordion>
+  <app-accordion-panel title="Non-SDR Sources" [count]="36">
+    <!-- Add your custom HTML or Angular content here -->
+    <ul>
+      <li>BMOB NB API</li>
+      <li>BMOB WFI Journals</li>
+    </ul>
+  </app-accordion-panel>
+
+  <app-accordion-panel title="SDR Sources" [count]="20">
+    <ul>
+      <li>ICI - Core</li>
+      <li>ICI - Attributes</li>
+    </ul>
+  </app-accordion-panel>
+</app-accordion>
+
+
+
+
+
+
+
+
+
