@@ -1,0 +1,57 @@
+Scenario:
+You have an Angular component that receives frequent data updates (such as stock prices every second). Performance is degrading rapidly. How would you optimize this?
+
+Answer:
+Switch the component’s change detection strategy to OnPush, reducing unnecessary checks. Additionally, you can implement manual change detection using ChangeDetectorRef and markForCheck() when needed.
+
+Scenario:
+You have a deeply nested Angular component hierarchy. The child component needs to communicate directly with a parent several levels up. What’s the recommended solution?
+
+Answer:
+Use a shared service to communicate via Observables. Alternatively, leverage state management libraries like NgRx for structured state management. Avoid direct coupling between distant components through @Input() or @Output() properties.
+
+Scenario:
+You notice a memory leak in your Angular application due to subscriptions to Observables. How can you resolve this?
+
+Answer:
+Ensure all Observable subscriptions are properly unsubscribed using techniques like the takeUntil() operator with a subject, or explicitly calling unsubscribe() in the ngOnDestroy() lifecycle hook.
+
+Scenario:
+You need to broadcast an event to multiple unrelated Angular components simultaneously. What is the best solution?
+
+Answer:
+Create a shared service with a Subject or BehaviorSubject. Components subscribe to the service’s Observable and receive updates in real-time.
+
+Q: Explain how you’d use the APP_INITIALIZER token in Angular and provide a use-case scenario.
+
+Answer:
+	•	APP_INITIALIZER executes specified functions during application initialization, ensuring preconditions are met before the app fully loads.
+	•	Common use-case: Loading configuration data from the server before bootstrapping the application.
+
+
+How can you use multiple CanActivate guards on a single route, and in what order are they executed?
+
+Answer:
+You can specify multiple guards in an array, and Angular executes them sequentially from left to right. Route activation continues only if all guards return true.
+
+
+Q: Describe the order in which Angular lifecycle hooks are executed.
+
+Answer:
+Angular lifecycle hooks execute in the following order:
+	1.	ngOnChanges() – Called first if the component has bound inputs.
+	2.	ngOnInit() – Called once, after first ngOnChanges.
+	3.	ngDoCheck() – Called during every change detection run.
+	4.	ngAfterContentInit() – Called after content projection (ng-content) is complete.
+	5.	ngAfterContentChecked() – Called after every check of projected content.
+	6.	ngAfterViewInit() – Called after the component’s view and child views initialize.
+	7.	ngAfterViewChecked() – Called after each view check.
+	8.	ngOnDestroy() – Called just before the component is destroyed.
+
+Q: What’s the difference between ngOnInit() and a component’s constructor?
+
+Answer:
+	•	Constructor: Used primarily for dependency injection and initializing class properties.
+	•	ngOnInit: Used for initializing component logic after Angular has set up data-bound input properties (@Input) and fully initialized the component.
+
+
