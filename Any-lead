@@ -1,0 +1,119 @@
+1. How would you architect a large-scale Angular application?
+	•	Answer:
+Use a modular architecture with feature, core, and shared modules. Leverage lazy loading to optimize performance. Implement state management using libraries like NgRx. Adhere to component-based architecture, maintain separation of concerns, and establish strict coding guidelines with clearly defined standards. Integrate robust routing and incorporate proper dependency injection strategies.
+
+⸻
+
+2. How do you handle state management in Angular?
+	•	Answer:
+Utilize libraries like NgRx or NGXS for complex applications to maintain predictable and centralized state management. Use a store pattern with actions, reducers, effects, and selectors for handling asynchronous data and improving maintainability.
+
+⸻
+
+3. Explain Angular Change Detection Strategies and when to use them.
+	•	Answer:
+Angular provides two strategies:
+	•	Default: Checks every component’s view for changes after each event.
+	•	OnPush: Only triggers change detection if inputs change, an event occurs in the component, or manually triggered. Use OnPush for better performance in large or complex UIs with immutable inputs.
+
+⸻
+
+4. What is Ahead-of-Time (AOT) compilation, and why is it important?
+	•	Answer:
+AOT compilation converts Angular code to JavaScript at build time rather than at runtime. It significantly reduces load time, provides faster rendering, detects template errors early, and enhances security by avoiding template evaluation at runtime.
+
+⸻
+
+5. How do you optimize Angular application performance?
+	•	Answer:
+	•	Use lazy-loading modules.
+	•	Apply ChangeDetectionStrategy.OnPush.
+	•	Optimize template bindings and reduce computations in templates.
+	•	Minimize the use of pipes in loops or frequent events.
+	•	Implement caching strategies for API requests.
+	•	Employ bundling, tree-shaking, and code-splitting with Webpack or Angular CLI.
+
+⸻
+
+6. Describe the concept of dependency injection hierarchy in Angular.
+	•	Answer:
+Angular’s DI is hierarchical:
+	•	Application Level (provided in root injector, available throughout the app).
+	•	Module Level (provided in modules, scoped within modules).
+	•	Component Level (services scoped to a specific component and its children).
+This hierarchy allows precise control over dependency scopes and lifecycles.
+
+⸻
+
+7. What are Angular Zones, and why might you run code outside of Angular’s Zone?
+	•	Answer:
+Zones track asynchronous operations to trigger change detection automatically. Running heavy operations outside Angular’s zone (NgZone.runOutsideAngular()) improves performance by preventing unnecessary change detection cycles.
+
+⸻
+
+8. How do you handle memory leaks in Angular?
+	•	Answer:
+Always unsubscribe from observables using techniques such as:
+	•	takeUntil() pattern with a subject.
+	•	Async pipe (automatic unsubscribing).
+	•	Properly manage subscriptions within components using lifecycle hooks (ngOnDestroy()).
+Use browser profiling tools to detect leaks.
+
+⸻
+
+9. Explain the difference between Smart and Dumb Components.
+	•	Answer:
+	•	Smart Components (container): Handle state, interact with services, orchestrate data flow.
+	•	Dumb Components (presentation): Stateless, receive data through inputs, emit events through outputs, purely presentational, and highly reusable.
+
+⸻
+
+10. How would you implement security best practices in an Angular application?
+	•	Answer:
+	•	Implement route guards for role-based access control.
+	•	Sanitize user inputs using built-in Angular sanitization.
+	•	Use HttpClient with interceptors to securely handle tokens and credentials.
+	•	Protect against common vulnerabilities like XSS (Cross-Site Scripting) and CSRF (Cross-Site Request Forgery) by enabling strict CSP (Content Security Policy).
+
+⸻
+
+11. What is Angular Universal, and what problems does it solve?
+	•	Answer:
+Angular Universal enables server-side rendering (SSR), improving initial load time, SEO performance, and social sharing. It helps in achieving faster perceived performance by pre-rendering views on the server before serving them to the client.
+
+⸻
+
+12. Explain RxJS operators commonly used in Angular applications.
+	•	Answer:
+	•	switchMap: Cancels the previous observable if a new event occurs.
+	•	mergeMap: Processes multiple observables concurrently.
+	•	concatMap: Processes observables sequentially.
+	•	debounceTime: Delays observable emissions, useful in search features to reduce API calls.
+	•	distinctUntilChanged: Emits only if the current value differs from the last, preventing redundant operations.
+
+⸻
+
+13. How would you perform unit and integration testing in Angular?
+	•	Answer:
+	•	Unit Tests: Use Jasmine and Karma for isolated testing of components, services, and pipes. Mock dependencies using tools like TestBed, spies, and mocks.
+	•	Integration Tests: Test component interactions and integration scenarios using TestBed and ComponentFixture. Consider Protractor or Cypress for end-to-end testing.
+
+⸻
+
+14. What strategies do you use to upgrade legacy Angular applications?
+	•	Answer:
+Gradually migrate features by:
+	•	Incrementally adopting new modules and components.
+	•	Applying a monorepo or micro-frontend strategy for gradual migration.
+	•	Implementing comprehensive tests before and after upgrades.
+	•	Leveraging Angular’s upgrade module for hybrid apps (AngularJS to Angular migration).
+
+⸻
+
+15. How do you ensure code quality in your Angular team?
+	•	Answer:
+	•	Implement linting tools (ESLint, Prettier) for consistent coding style.
+	•	Enforce code reviews and pair programming.
+	•	Use automated CI/CD pipelines.
+	•	Establish a strict testing strategy (unit, integration, E2E).
+	•	Regularly refactor codebases, maintain coding standards documentation, and conduct knowledge-sharing sessions.
