@@ -1,0 +1,40 @@
+loadFileValidationData(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    this.store.pipe(select(selectFileValidation), take(1)).subscribe((validationData: any[]) => {
+      this.showDropDown = true;
+
+      if (!validationData || validationData.length === 0) {
+        this.loading = true;
+        this._bptApiService.getData('s3/read-file/file_validation[]').subscribe({
+          next: (data: any) => {
+            if (
+              (data.data.isError && data.data.isError.toLowerCase() === 'false') ||
+              data.data.content.length > 0
+            ) {
+              this._xlsDownloadService.readFileValidationData(data.data.content).subscribe((fileData) => {
+                this.loading = false;
+                this.fileValidationData = fileData;
+                this.store.dispatch(loadFileValidationDataSuccess({ fileValidationData: fileData }));
+                resolve(); // <-- done
+              });
+            } else {
+              this.loading = false;
+              this.isFailed = true;
+              this.disbleDropDown = true;
+              this.errMessage = ['Error in File validation data', data.data.errorMessage || data.data.message];
+              resolve(); // still resolve, but failed path
+            }
+          },
+          error: (err) => {
+            this.loading = false;
+            this.isFailed = true;
+            this.disbleDropDown = true;
+            reject(err);
+          }
+        });
+      } else {
+        resolve(); // no need to load
+      }
+    });
+  });
+}
