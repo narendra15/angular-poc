@@ -1,0 +1,48 @@
+function checkBVCode() {
+  const indexBVCode = headerNames.findIndex(item => item.header === 'bv_code');
+  const indexBVDesc1 = headerNames.findIndex(item => item.header === 'bv_desc_1');
+
+  if (indexBVCode === -1 || indexBVDesc1 === -1) {
+    console.error('bv_code or bv_desc_1 column not found');
+    return;
+  }
+
+  const bvCodeCol = columnWiseData[indexBVCode] || [];
+  const bvDesc1Col = columnWiseData[indexBVDesc1] || [];
+
+  const rowIndex = bvCodeCol.findIndex(val => val === 'REPORTINGMONTH');
+
+  if (rowIndex === -1) {
+    console.error('REPORTINGMONTH not found in bv_code column');
+    return;
+  }
+
+  const descValue = bvDesc1Col[rowIndex]?.trim();
+
+  if (!descValue) {
+    console.error('No corresponding bv_desc_1 value found for REPORTINGMONTH');
+    return;
+  }
+
+  if (descValue === 'YYYY-MM-DD') {
+    console.log('REPORTINGMONTH format validated as YYYY-MM-DD');
+    return;
+  }
+
+  // If it's a date, check if it's the last day of the month
+  const date = new Date(descValue);
+  if (isNaN(date.getTime())) {
+    console.error(`Invalid date format for REPORTINGMONTH in bv_desc_1: ${descValue}`);
+    return;
+  }
+
+  const year = date.getFullYear();
+  const month = date.getMonth(); // 0-indexed
+  const lastDay = new Date(year, month + 1, 0).getDate();
+
+  if (date.getDate() === lastDay) {
+    console.log('REPORTINGMONTH date is last day of month');
+  } else {
+    console.error(`Date ${descValue} is not the last day of the month`);
+  }
+}
