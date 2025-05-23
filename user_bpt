@@ -1,0 +1,40 @@
+function checkUserBPT(currentUserEmail: string): string[] {
+  let errorMessage: string[] = [];
+
+  const emailIndex = headerNames.findIndex(item => item.header === 'utm_email');
+  const approverIndex = headerNames.findIndex(item => item.header === 'utm_approver_flg');
+
+  if (emailIndex === -1 || approverIndex === -1) {
+    if (emailIndex === -1) errorMessage.push('utm_email column not found');
+    if (approverIndex === -1) errorMessage.push('utm_approver_flg column not found');
+    return errorMessage;
+  }
+
+  const emailData = columnWiseData[emailIndex] || [];
+  const approverData = columnWiseData[approverIndex] || [];
+
+  const userIndex = emailData.findIndex(email => email.trim().toLowerCase() === currentUserEmail.trim().toLowerCase());
+
+  if (userIndex === -1) {
+    errorMessage.push(`Logged-in user email (${currentUserEmail}) not found in utm_email column`);
+  } else {
+    // 1. Check if user's flag is 'Y'
+    if (approverData[userIndex]?.trim() === 'Y') {
+      errorMessage.push(`Logged-in user (${currentUserEmail}) should not have Y in utm_approver_flg`);
+    }
+  }
+
+  // 2. Check for at least one 'Y'
+  const hasAtLeastOneY = approverData.some(val => val?.trim() === 'Y');
+  if (!hasAtLeastOneY) {
+    errorMessage.push('At least one user must have utm_approver_flg as Y');
+  }
+
+  // 3. Check for at least one empty
+  const hasAtLeastOneEmpty = approverData.some(val => !val || val.trim() === '');
+  if (!hasAtLeastOneEmpty) {
+    errorMessage.push('At least one user must have utm_approver_flg empty');
+  }
+
+  return errorMessage;
+}
