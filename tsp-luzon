@@ -1,0 +1,35 @@
+import { Pipe, PipeTransform } from '@angular/core';
+import { DateTime } from 'luxon';
+import { TimezoneService } from '../services/timezone.service';
+
+@Pipe({ name: 'formatTimestamp' })
+export class FormatTimestampPipe implements PipeTransform {
+  selectedTimezone: string = 'UTC';
+
+  private timezoneMap: { [key: string]: string } = {
+    'EST': 'America/New_York',
+    'PST': 'America/Los_Angeles',
+    'MST': 'America/Denver',
+    'CST': 'America/Chicago',
+    'AST': 'America/Halifax',
+    'UTC': 'UTC'
+  };
+
+  constructor(private timezoneService: TimezoneService) {
+    this.timezoneService.timezone$.subscribe((timezone) => {
+      this.selectedTimezone = timezone;
+    });
+  }
+
+  transform(timestamp: string): string {
+    if (!timestamp) return 'Timestamp Not Available';
+
+    // Backend has already embedded DST offset, so parse as-is
+    const parsed = DateTime.fromISO(timestamp);
+
+    const ianaZone = this.timezoneMap[this.selectedTimezone] || 'UTC';
+    const converted = parsed.setZone(ianaZone);
+
+    return `${converted.toFormat('LLLL d, yyyy HH:mm:ss')} ${this.selectedTimezone}`;
+  }
+}
