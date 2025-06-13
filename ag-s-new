@@ -5,34 +5,38 @@ applySearchBoxFilters() {
     const metadataKeysWithChanges: Set<string> = new Set();
     let metadataMatch = false;
 
-    // Step 1: Check metadata only if status is 'M'
-    if (row.status === 'M' && Array.isArray(row.metadata)) {
-      metadataMatch = row.metadata.some((metaItem: any) => {
-        return Object.entries(metaItem).some(([key, entry]: [string, any]) => {
-          if (entry?.new_value) {
-            metadataKeysWithChanges.add(key);
-            if (
-              typeof entry.new_value === 'string' &&
-              entry.new_value.toLowerCase().includes(searchTerm)
-            ) {
-              return true; // Match found in metadata new_value
+    // SAFELY check metadata only if status is 'M'
+    if (row.status === 'M') {
+      const metadata = row.metadata;
+      if (Array.isArray(metadata)) {
+        metadataMatch = metadata.some((metaItem: any) => {
+          return Object.entries(metaItem).some(([key, entry]: [string, any]) => {
+            if (entry?.new_value) {
+              metadataKeysWithChanges.add(key);
+              if (
+                typeof entry.new_value === 'string' &&
+                entry.new_value.toLowerCase().includes(searchTerm)
+              ) {
+                return true; // Match found
+              }
             }
-          }
-          return false;
+            return false;
+          });
         });
-      });
+      } else {
+        console.warn('metadata is not an array for row:', row);
+      }
     }
 
-    // Step 2: Top-level match — skip keys that have changed in metadata
+    // Search top-level only for keys not present in metadata
     const topLevelMatch = Object.entries(row).some(([key, value]: [string, any]) => {
       return (
-        !metadataKeysWithChanges.has(key) && // Only unchanged fields
+        !metadataKeysWithChanges.has(key) &&
         typeof value === 'string' &&
         value.toLowerCase().includes(searchTerm)
       );
     });
 
-    // Step 3: Include the row if either match is true
     return topLevelMatch || metadataMatch;
   });
 }
