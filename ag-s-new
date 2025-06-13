@@ -1,44 +1,64 @@
 applySearchBoxFilters() {
+  // Convert the user's search input to lowercase for case-insensitive comparison
   const searchTerm = this.searchInput?.toLowerCase() || '';
 
+  // Filter the original dataset and assign the result to the filtered data for display
   this.fileGridFilteredData = this.fileOriginalData.filter((row: any) => {
+    
+    // A set to store keys from metadata that have a new_value (i.e., changed fields)
     const metadataKeysWithChanges: Set<string> = new Set();
+
+    // Flag to track if any match was found in the metadata
     let metadataMatch = false;
 
+    // Only perform metadata-based search if the row status is 'M'
     if (row.status === 'M') {
       let metadataArray: any[] = [];
 
-      // Convert object with numeric keys to array
+      // Normalize metadata to ensure it's always treated as an array
+      // Case 1: Already a proper array
       if (Array.isArray(row.metadata)) {
         metadataArray = row.metadata;
-      } else if (row.metadata && typeof row.metadata === 'object') {
-        metadataArray = Object.values(row.metadata);
+      } 
+      // Case 2: It's an object with numeric keys (array-like but not a real array)
+      else if (row.metadata && typeof row.metadata === 'object') {
+        metadataArray = Object.values(row.metadata); // Convert object to array
       }
 
+      // Loop through each metadata item
       metadataMatch = metadataArray.some((metaItem: any) => {
+        // Each metadata item contains a single key (e.g., et_name, et_subject, etc.)
         return Object.entries(metaItem).some(([key, entry]: [string, any]) => {
+          // Check if there's a changed value (new_value exists)
           if (entry?.new_value) {
+            // Record that this field was changed so we skip its top-level value later
             metadataKeysWithChanges.add(key);
+
+            // Check if new_value contains the search term (case-insensitive)
             if (
               typeof entry.new_value === 'string' &&
               entry.new_value.toLowerCase().includes(searchTerm)
             ) {
-              return true;
+              return true; // A match is found in metadata
             }
           }
-          return false;
+          return false; // No match found in this metadata entry
         });
       });
     }
 
+    // Now perform top-level field search (only for fields NOT in metadataKeysWithChanges)
     const topLevelMatch = Object.entries(row).some(([key, value]: [string, any]) => {
       return (
+        // Skip keys that have changed (already searched in metadata)
         !metadataKeysWithChanges.has(key) &&
+        // Search only string fields
         typeof value === 'string' &&
         value.toLowerCase().includes(searchTerm)
       );
     });
 
+    // Keep the row if it matches either the top-level fields or metadata
     return topLevelMatch || metadataMatch;
   });
 }
