@@ -1,0 +1,43 @@
+applySearchBoxFilters() {
+  const searchTerm = this.searchInput?.toLowerCase() || '';
+
+  if (this.selectedStatusTypes.length === 0) {
+    // No checkbox filter — search full data and check metadata for 'M' rows
+    this.fileGridFilteredData = this.fileOriginalData.filter((row: any) => {
+      const metadataKeysToSkip: Set<string> = new Set();
+      let metadataMatch = false;
+
+      if (row.status === 'M' && Array.isArray(row.metadata)) {
+        metadataMatch = row.metadata.some((metaItem: any) => {
+          return Object.entries(metaItem).some(([key, entry]: [string, any]) => {
+            if (entry?.new_value) {
+              metadataKeysToSkip.add(key);
+              if (entry.new_value.toLowerCase().includes(searchTerm)) {
+                return true;
+              }
+            }
+            return false;
+          });
+        });
+      }
+
+      const topLevelMatch = Object.entries(row).some(([key, value]: [string, any]) => {
+        return (
+          !metadataKeysToSkip.has(key) &&
+          typeof value === 'string' &&
+          value.toLowerCase().includes(searchTerm)
+        );
+      });
+
+      return topLevelMatch || metadataMatch;
+    });
+  } else {
+    // Checkbox filter applied — skip metadata search for performance
+    this.fileGridFilteredData = this.filteredByStatusTypes.filter((row: any) =>
+      Object.values(row).some(
+        (value: any) =>
+          typeof value === 'string' && value.toLowerCase().includes(searchTerm)
+      )
+    );
+  }
+}
