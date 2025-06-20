@@ -1,0 +1,30 @@
+export interface FileValidation {
+  cfv_app_name: string;
+  cfv_csv_rowstart: number;
+  cfv_csv_colstart: number;
+  cfv_filetemplate_type: string;
+  cfv_filetemplate_name: string;
+  cfv_s3_col_name: string;
+  cfv_datatype: string;
+  cfv_length: number;
+  cfv_precision: number;
+  cfv_allow_empty_values: string;
+  cfv_prepad_zeroes: string;
+  cfv_agrid_display_name: string;
+  cfv_agrid_key: string;
+}
+
+export interface FileMapping {
+  cfm_app_name: string;
+  cfm_filetemplate_type: string;
+  cfm_filetemplate_name: string;
+  cfm_favorite_flag: string;
+  cfm_validate_flag: string;
+  cfm_target: string;
+  cfm_target_details: string;
+}
+
+export interface FileState {
+  filevalidation: FileValidation[];
+  filemapping: FileMapping[];
+}
