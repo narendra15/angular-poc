@@ -49,3 +49,20 @@ export class FormatTimestampPipe implements PipeTransform {
   { label: 'MST (UTC-07:00)', value: 'America/Denver' },
   { label: 'PST (UTC-08:00)', value: 'America/Los_Angeles' }
 ]
+
+
+
+ // ✅ Utility to check if the date is in DST in the given IANA zone
+  private isDateInDST(date: Date, timeZone: string): boolean {
+    const jan = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      timeZoneName: 'short'
+    }).formatToParts(new Date(date.getFullYear(), 0, 1)).find(p => p.type === 'timeZoneName')?.value;
+
+    const test = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      timeZoneName: 'short'
+    }).formatToParts(date).find(p => p.type === 'timeZoneName')?.value;
+
+    return jan !== test; // If abbreviation differs, it's DST (EDT instead of EST)
+  }
