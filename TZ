@@ -1,0 +1,41 @@
+export class FormatTimestampPipe implements PipeTransform {
+  selectedTimezone: string = 'America/New_York'; // default to EST/EDT
+
+  constructor(private timezoneService: TimezoneService) {
+    this.timezoneService.timezone$.subscribe(({ timezone }) => {
+      // Expect values like 'America/New_York', 'America/Los_Angeles', 'UTC', etc.
+      this.selectedTimezone = timezone;
+    });
+  }
+
+  transform(timestamp: string): string {
+    if (!timestamp) return 'Timestamp Not Available';
+
+    // Step 1: Convert backend's EST-marked-as-UTC to real UTC by adding 5 hours
+    const estDate = new Date(timestamp.endsWith('Z') ? timestamp : `${timestamp}Z`);
+    const correctedUTC = new Date(estDate.getTime() + 5 * 60 * 60 * 1000);
+
+    // Step 2: Format using selected timezone (auto-handles DST)
+    const dateStr = new Intl.DateTimeFormat('en-US', {
+      timeZone: this.selectedTimezone,
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric'
+    }).format(correctedUTC);
+
+    const timeStr = new Intl.DateTimeFormat('en-US', {
+      timeZone: this.selectedTimezone,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    }).format(correctedUTC);
+
+    const timeZoneAbbr = new Intl.DateTimeFormat('en-US', {
+      timeZone: this.selectedTimezone,
+      timeZoneName: 'short'
+    }).formatToParts(correctedUTC).find(part => part.type === 'timeZoneName')?.value ?? this.selectedTimezone;
+
+    return `${dateStr} @${timeStr} ${timeZoneAbbr}`;
+  }
+}
