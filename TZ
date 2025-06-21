@@ -39,3 +39,13 @@ export class FormatTimestampPipe implements PipeTransform {
     return `${dateStr} @${timeStr} ${timeZoneAbbr}`;
   }
 }
+
+
+[
+  { label: 'UTC (UTC)', value: 'UTC' },
+  { label: 'AST (UTC-04:00)', value: 'America/Halifax' },
+  { label: 'EST (UTC-05:00)', value: 'America/New_York' },
+  { label: 'CST (UTC-06:00)', value: 'America/Chicago' },
+  { label: 'MST (UTC-07:00)', value: 'America/Denver' },
+  { label: 'PST (UTC-08:00)', value: 'America/Los_Angeles' }
+]
