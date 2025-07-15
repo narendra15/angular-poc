@@ -1,209 +1,31 @@
 transform(timestamp: string): string {
-  const timezoneOffsets: { [key: string]: string } = {
-    'EST': 'America/New_York',
-    'PST': 'America/Los_Angeles',
-    'MST': 'America/Denver',
-    'CST': 'America/Chicago',
-    'AST': 'America/Halifax',
-    'UTC': 'UTC'
+  const zoneMap: Record<string, string> = {
+    EST: 'America/New_York',
+    PST: 'America/Los_Angeles',
+    MST: 'America/Denver',
+    CST: 'America/Chicago',
+    AST: 'America/Halifax',
+    UTC: 'UTC'
   };
 
-  const timeZone = timezoneOffsets[this.selectedTimezone] || 'UTC';
+  const displayZone = zoneMap[this.selectedTimezone] ?? 'UTC';
 
-  // Parse timestamp as if it's in America/New_York (EST/EDT from DB)
-  const estDate = new Date(timestamp); // already assumed to be EST/EDT
+  // 1. Tell Luxon the string is in New York **and** tell it to keep that zone
+  const localNY = DateTime.fromISO(timestamp, {
+    zone: 'America/New_York',
+    setZone: true          // <-- the critical flag!
+  });                                        //  ⬆️  uses EDT/EST automatically
 
-  // Format full date
-  const dateStr = new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric'
-  }).format(estDate);
+  // 2. Convert to true UTC
+  const utc = localNY.toUTC();               // 2025-07-15T01:12:10Z
 
-  // Format time
-  const timeStr = new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false
-  }).format(estDate);
+  // 3. Convert to whatever zone the user picked in the UI
+  const final = utc.setZone(displayZone);    // EST→21:12  |  PST→18:12  |  UTC→01:12
 
-  // Format short time zone abbreviation
-  const timeZoneAbbr = new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    timeZoneName: 'short'
-  }).formatToParts(estDate).find(part => part.type === 'timeZoneName')?.value || '';
+  // 4. Format
+  const dateStr = final.toLocaleString({ year: 'numeric', month: 'long', day: 'numeric' });
+  const timeStr = final.toFormat('HH:mm:ss');
+  const abbr    = final.offsetNameShort;     // “EDT”, “PDT”, “UTC”, …
 
-  return `${dateStr}, ${timeStr} ${timeZoneAbbr}`;
+  return `${dateStr}, ${timeStr} ${abbr}`;
 }
-
-
-
-
-
-
-
-
-import { DateTime } from 'luxon';
-
-transform(timestamp: string): string {
-  const timezoneOffsets: { [key: string]: string } = {
-    'EST': 'America/New_York',
-    'PST': 'America/Los_Angeles',
-    'MST': 'America/Denver',
-    'CST': 'America/Chicago',
-    'AST': 'America/Halifax',
-    'UTC': 'UTC'
-  };
-
-  const targetZone = timezoneOffsets[this.selectedTimezone] || 'UTC';
-
-  // Interpret the timestamp as America/New_York time (coming from DB)
-  const easternDate = DateTime.fromISO(timestamp, { zone: 'America/New_York' });
-
-  // Convert to UTC
-  const utcDate = easternDate.toUTC(); // ← this is your "//here"
-
-  // Format in the desired time zone
-  const formattedDate = utcDate.setZone(targetZone);
-
-  const dateStr = formattedDate.toLocaleString({
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric'
-  });
-
-  const timeStr = formattedDate.toLocaleString(DateTime.TIME_24_WITH_SECONDS);
-
-  const timeZoneAbbr = formattedDate.offsetNameShort;
-
-  return `${dateStr}, ${timeStr} ${timeZoneAbbr}`;
-}
-
-
-
-////////////////////////////
-
-
-transform(timestamp: string): string {
-  const timezoneOffsets: { [key: string]: string } = {
-    'EST': 'America/New_York',
-    'PST': 'America/Los_Angeles',
-    'MST': 'America/Denver',
-    'CST': 'America/Chicago',
-    'AST': 'America/Halifax',
-    'UTC': 'UTC'
-  };
-
-  const selectedZone = timezoneOffsets[this.selectedTimezone] || 'UTC';
-
-  // Step 1: Parse timestamp AS IF it's in America/New_York (EST/EDT from DB)
-  const localNY = DateTime.fromISO(timestamp, { zone: 'America/New_York' });
-
-  // Step 2: Convert it to UTC
-  const utc = localNY.toUTC(); // this is the actual UTC time of the original EST/EDT timestamp
-
-  // Step 3: Format that UTC time in the desired zone
-  const finalDate = utc.setZone(selectedZone);
-
-  const dateStr = finalDate.toLocaleString({
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric'
-  });
-
-  const timeStr = finalDate.toLocaleString(DateTime.TIME_24_WITH_SECONDS);
-
-  const timeZoneAbbr = finalDate.offsetNameShort;
-
-  return `${dateStr}, ${timeStr} ${timeZoneAbbr}`;
-}
-
-
-***********************
-
-import { DateTime } from 'luxon';
-
-transform(timestamp: string): string {
-  const timezoneOffsets: { [key: string]: string } = {
-    'EST': 'America/New_York',
-    'PST': 'America/Los_Angeles',
-    'MST': 'America/Denver',
-    'CST': 'America/Chicago',
-    'AST': 'America/Halifax',
-    'UTC': 'UTC'
-  };
-
-  const selectedZone = timezoneOffsets[this.selectedTimezone] || 'UTC';
-
-  // Step 1: Parse the timestamp as a local time in New York
-  const local = DateTime.fromISO(timestamp, { zone: 'America/New_York' });
-
-  // Step 2: Convert it to UTC (i.e., shift the clock forward)
-  const utc = DateTime.utc(
-    local.year,
-    local.month,
-    local.day,
-    local.hour,
-    local.minute,
-    local.second
-  );
-
-  // Step 3: Format it in the selected zone
-  const final = utc.setZone(selectedZone);
-
-  const dateStr = final.toLocaleString({
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric'
-  });
-
-  const timeStr = final.toLocaleString(DateTime.TIME_24_WITH_SECONDS);
-
-  const timeZoneAbbr = final.offsetNameShort;
-
-  return `${dateStr}, ${timeStr} ${timeZoneAbbr}`;
-}
-
-
-11111111111111111111
-
-
-
-transform(timestamp: string): string {
-  const timezoneOffsets: { [key: string]: string } = {
-    'EST': 'America/New_York',
-    'PST': 'America/Los_Angeles',
-    'MST': 'America/Denver',
-    'CST': 'America/Chicago',
-    'AST': 'America/Halifax',
-    'UTC': 'UTC'
-  };
-
-  const selectedZone = timezoneOffsets[this.selectedTimezone] || 'UTC';
-
-  // Step 1: Interpret the timestamp as EST/EDT (New York local time)
-  const localEST = DateTime.fromISO(timestamp, { zone: 'America/New_York' });
-
-  // Step 2: Convert it to UTC — Luxon handles DST correctly here
-  const asUTC = localEST.toUTC();
-
-  // Step 3: Convert to user-selected zone for display
-  const finalDate = asUTC.setZone(selectedZone);
-
-  // Format pieces
-  const dateStr = finalDate.toLocaleString({
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric'
-  });
-
-  const timeStr = finalDate.toLocaleString(DateTime.TIME_24_WITH_SECONDS);
-
-  const timeZoneAbbr = finalDate.offsetNameShort;
-
-  return `${dateStr}, ${timeStr} ${timeZoneAbbr}`;
-}
-
