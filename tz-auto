@@ -121,3 +121,49 @@ transform(timestamp: string): string {
   return `${dateStr}, ${timeStr} ${timeZoneAbbr}`;
 }
 
+
+***********************
+
+import { DateTime } from 'luxon';
+
+transform(timestamp: string): string {
+  const timezoneOffsets: { [key: string]: string } = {
+    'EST': 'America/New_York',
+    'PST': 'America/Los_Angeles',
+    'MST': 'America/Denver',
+    'CST': 'America/Chicago',
+    'AST': 'America/Halifax',
+    'UTC': 'UTC'
+  };
+
+  const selectedZone = timezoneOffsets[this.selectedTimezone] || 'UTC';
+
+  // Step 1: Parse the timestamp as a local time in New York
+  const local = DateTime.fromISO(timestamp, { zone: 'America/New_York' });
+
+  // Step 2: Convert it to UTC (i.e., shift the clock forward)
+  const utc = DateTime.utc(
+    local.year,
+    local.month,
+    local.day,
+    local.hour,
+    local.minute,
+    local.second
+  );
+
+  // Step 3: Format it in the selected zone
+  const final = utc.setZone(selectedZone);
+
+  const dateStr = final.toLocaleString({
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric'
+  });
+
+  const timeStr = final.toLocaleString(DateTime.TIME_24_WITH_SECONDS);
+
+  const timeZoneAbbr = final.offsetNameShort;
+
+  return `${dateStr}, ${timeStr} ${timeZoneAbbr}`;
+}
+
