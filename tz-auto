@@ -1,0 +1,40 @@
+transform(timestamp: string): string {
+  const timezoneOffsets: { [key: string]: string } = {
+    'EST': 'America/New_York',
+    'PST': 'America/Los_Angeles',
+    'MST': 'America/Denver',
+    'CST': 'America/Chicago',
+    'AST': 'America/Halifax',
+    'UTC': 'UTC'
+  };
+
+  const timeZone = timezoneOffsets[this.selectedTimezone] || 'UTC';
+
+  // Parse timestamp as if it's in America/New_York (EST/EDT from DB)
+  const estDate = new Date(timestamp); // already assumed to be EST/EDT
+
+  // Format full date
+  const dateStr = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric'
+  }).format(estDate);
+
+  // Format time
+  const timeStr = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  }).format(estDate);
+
+  // Format short time zone abbreviation
+  const timeZoneAbbr = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    timeZoneName: 'short'
+  }).formatToParts(estDate).find(part => part.type === 'timeZoneName')?.value || '';
+
+  return `${dateStr}, ${timeStr} ${timeZoneAbbr}`;
+}
