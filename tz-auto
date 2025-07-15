@@ -38,3 +38,47 @@ transform(timestamp: string): string {
 
   return `${dateStr}, ${timeStr} ${timeZoneAbbr}`;
 }
+
+
+
+
+
+
+
+
+import { DateTime } from 'luxon';
+
+transform(timestamp: string): string {
+  const timezoneOffsets: { [key: string]: string } = {
+    'EST': 'America/New_York',
+    'PST': 'America/Los_Angeles',
+    'MST': 'America/Denver',
+    'CST': 'America/Chicago',
+    'AST': 'America/Halifax',
+    'UTC': 'UTC'
+  };
+
+  const targetZone = timezoneOffsets[this.selectedTimezone] || 'UTC';
+
+  // Interpret the timestamp as America/New_York time (coming from DB)
+  const easternDate = DateTime.fromISO(timestamp, { zone: 'America/New_York' });
+
+  // Convert to UTC
+  const utcDate = easternDate.toUTC(); // ← this is your "//here"
+
+  // Format in the desired time zone
+  const formattedDate = utcDate.setZone(targetZone);
+
+  const dateStr = formattedDate.toLocaleString({
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric'
+  });
+
+  const timeStr = formattedDate.toLocaleString(DateTime.TIME_24_WITH_SECONDS);
+
+  const timeZoneAbbr = formattedDate.offsetNameShort;
+
+  return `${dateStr}, ${timeStr} ${timeZoneAbbr}`;
+}
+
