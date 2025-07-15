@@ -1,4 +1,4 @@
-transform(timestamp: string): string {
+transform(rawTs: string): string {
   const zoneMap: Record<string, string> = {
     EST: 'America/New_York',
     PST: 'America/Los_Angeles',
@@ -7,25 +7,17 @@ transform(timestamp: string): string {
     AST: 'America/Halifax',
     UTC: 'UTC'
   };
-
   const displayZone = zoneMap[this.selectedTimezone] ?? 'UTC';
 
-  // 1. Tell Luxon the string is in New York **and** tell it to keep that zone
-  const localNY = DateTime.fromISO(timestamp, {
-    zone: 'America/New_York',
-    setZone: true          // <-- the critical flag!
-  });                                        //  ⬆️  uses EDT/EST automatically
+  // 1. Remove the bogus “Z”
+  const clean = rawTs.endsWith('Z') ? rawTs.slice(0, -1) : rawTs;
 
-  // 2. Convert to true UTC
-  const utc = localNY.toUTC();               // 2025-07-15T01:12:10Z
+  // 2. Parse the numbers *as* America/New_York time
+  const ny = DateTime.fromISO(clean, { zone: 'America/New_York', setZone: true });
+  if (!ny.isValid) return 'Invalid timestamp';
 
-  // 3. Convert to whatever zone the user picked in the UI
-  const final = utc.setZone(displayZone);    // EST→21:12  |  PST→18:12  |  UTC→01:12
+  // 3. Convert to the chosen display zone
+  const shown = ny.toUTC().setZone(displayZone);
 
-  // 4. Format
-  const dateStr = final.toLocaleString({ year: 'numeric', month: 'long', day: 'numeric' });
-  const timeStr = final.toFormat('HH:mm:ss');
-  const abbr    = final.offsetNameShort;     // “EDT”, “PDT”, “UTC”, …
-
-  return `${dateStr}, ${timeStr} ${abbr}`;
+  return shown.toFormat("yyyy-LL-dd HH:mm:ss z");   // or your custom format
 }
