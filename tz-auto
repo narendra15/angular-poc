@@ -9,15 +9,18 @@ transform(rawTs: string): string {
   };
   const displayZone = zoneMap[this.selectedTimezone] ?? 'UTC';
 
-  // 1. Remove the bogus “Z”
-  const clean = rawTs.endsWith('Z') ? rawTs.slice(0, -1) : rawTs;
+  // ── clean the bogus “Z” and parse as NY time ──────────────────────────────
+  const clean    = rawTs.endsWith('Z') ? rawTs.slice(0, -1) : rawTs;
+  const nyLocal  = DateTime.fromISO(clean, { zone: 'America/New_York', setZone: true });
+  if (!nyLocal.isValid) return 'Invalid timestamp';
 
-  // 2. Parse the numbers *as* America/New_York time
-  const ny = DateTime.fromISO(clean, { zone: 'America/New_York', setZone: true });
-  if (!ny.isValid) return 'Invalid timestamp';
+  // ── convert to UTC → convert to chosen zone ───────────────────────────────
+  const shown = nyLocal.toUTC().setZone(displayZone);
 
-  // 3. Convert to the chosen display zone
-  const shown = ny.toUTC().setZone(displayZone);
+  // ── format pieces exactly the way you showed ─────────────────────────────
+  const datePart = shown.toLocaleString({ month: 'long', day: 'numeric', year: 'numeric' });
+  const timePart = shown.toFormat('HH:mm:ss');       // 24-hour; use 'hh:mm:ss' for 12-hour
+  const abbr     = shown.offsetNameShort;            // EST / EDT / UTC / …
 
-  return shown.toFormat("yyyy-LL-dd HH:mm:ss z");   // or your custom format
+  return `${datePart} ${timePart} ${abbr}`;          // ← no extra comma here
 }
