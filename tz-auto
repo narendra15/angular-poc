@@ -167,3 +167,43 @@ transform(timestamp: string): string {
   return `${dateStr}, ${timeStr} ${timeZoneAbbr}`;
 }
 
+
+11111111111111111111
+
+
+
+transform(timestamp: string): string {
+  const timezoneOffsets: { [key: string]: string } = {
+    'EST': 'America/New_York',
+    'PST': 'America/Los_Angeles',
+    'MST': 'America/Denver',
+    'CST': 'America/Chicago',
+    'AST': 'America/Halifax',
+    'UTC': 'UTC'
+  };
+
+  const selectedZone = timezoneOffsets[this.selectedTimezone] || 'UTC';
+
+  // Step 1: Interpret the timestamp as EST/EDT (New York local time)
+  const localEST = DateTime.fromISO(timestamp, { zone: 'America/New_York' });
+
+  // Step 2: Convert it to UTC — Luxon handles DST correctly here
+  const asUTC = localEST.toUTC();
+
+  // Step 3: Convert to user-selected zone for display
+  const finalDate = asUTC.setZone(selectedZone);
+
+  // Format pieces
+  const dateStr = finalDate.toLocaleString({
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric'
+  });
+
+  const timeStr = finalDate.toLocaleString(DateTime.TIME_24_WITH_SECONDS);
+
+  const timeZoneAbbr = finalDate.offsetNameShort;
+
+  return `${dateStr}, ${timeStr} ${timeZoneAbbr}`;
+}
+
