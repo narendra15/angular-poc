@@ -46,3 +46,110 @@ export function csvToAgGrid(payload: string): { colDefs: ColDef[]; rowData: any[
     return isNaN(n) ? v : n;
   }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/****************************************************************************************
+ * csvToGrid() – parses escaped-newline CSV ➜ { colDefs, rowData }
+ * Mirrors width logic & cellClassRules from gridRendering().
+ ****************************************************************************************/
+import { ColDef } from 'ag-grid-community';
+
+function csvToGrid(payload: string,
+                   setRowStyle: (p: any, f: string) => any): { colDefs: ColDef[]; rowData: any[] } {
+
+  /* ── 0.  prepare data ───────────────────────────────────────────────────────────── */
+  const [headerLine, ...dataLines] =
+    payload.replace(/\\n/g, '\n').trim().split('\n');      // de-escape "\n"
+  const headers = headerLine.split(',');
+
+  const rowData = dataLines
+    .filter(Boolean)                                      // ignore blank lines
+    .map(line => {
+      const cells = line.split(',');
+      return headers.reduce((obj, h, i) => {
+        obj[h] = cast(cells[i]);                           // auto-cast numbers
+        return obj;
+      }, {} as any);
+    });
+
+  /* ── 1.  width calculation (same as your gridRendering) ─────────────────────────── */
+  const staticColumnWidth = 75;
+  const totalGridWidth    = window.innerWidth || 1200;
+
+  const calWidths = headers.map(key => {
+    const maxContentLen = Math.max(
+      key.length,
+      ...rowData.map(r => String(r[key]).length)
+    );
+
+    return {
+      key,
+      width: maxContentLen < 50      // identical rule you use now
+        ? maxContentLen * 8 + 23
+        : maxContentLen * 7,
+    };
+  });
+
+  const totalCalWidth  = calWidths.reduce((sum, c) => sum + c.width, 0);
+  const availableWidth = totalGridWidth - staticColumnWidth;
+
+  const scaled = calWidths.map(c => ({
+    ...c,
+    width: Math.round((c.width / totalCalWidth) * availableWidth),
+  }));
+
+  /* ── 2.  build columnDefs with same style / rules ───────────────────────────────── */
+  const colDefs: ColDef[] = [
+    {                                             // S. No. column
+      headerName  : 'S.no.',
+      valueGetter : 'node.rowIndex + 1',
+      width       : staticColumnWidth,
+      pinned      : 'left',
+      lockPinned  : true,
+      headerClass : 'align-left',
+    },
+    ...scaled.map(col => ({
+      headerName : col.key,
+      field      : col.key,
+      width      : col.width,
+      editable   : false,
+      cellStyle  : (p: any) => setRowStyle?.(p, col.key),
+      cellClassRules: {
+        'align-left'  : (p: any) => typeof p.value !== 'number',
+        'align-right' : (p: any) => typeof p.value === 'number',
+      },
+    })),
+  ];
+
+  return { colDefs, rowData };
+
+  /* ── helpers ────────────────────────────────────────────────────────────────────── */
+  function cast(v: string): string | number {
+    const n = Number(v);
+    return isNaN(n) ? v : n;
+  }
+}
+
