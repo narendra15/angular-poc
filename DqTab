@@ -153,3 +153,128 @@ function csvToGrid(payload: string,
   }
 }
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+csvToGrid(payload: string): { colDefs: ColDef[]; rowData: any[] } {
+  /* ── 0.  unescape and split lines ──────────────────────────────────────────── */
+  const [headerLine, ...dataLines] =
+    payload.replace(/\\n/g, '\n').trim().split('\n');
+
+  const headers = headerLine.split(',');
+
+  /* ── 1.  build rowData & cache max text length per column ──────────────────── */
+  const maxLen: Record<string, number> = Object.fromEntries(
+    headers.map(h => [h, h.length])
+  );
+
+  const rowData = dataLines
+    .filter(Boolean)
+    .map(line => {
+      const cells = line.split(',');
+      const row   = headers.reduce((obj, h, i) => {
+        const value        = cast(cells[i]);
+        maxLen[h]          = Math.max(maxLen[h], String(value).length);
+        (obj as any)[h]    = value;
+        return obj;
+      }, {} as unknown as Record<string, any>);
+      return row;
+    });
+
+  /* ── 2.  width calculation (identical to your component) ───────────────────── */
+  const staticColumnWidth = 75;
+  const totalGridWidth    = window.innerWidth || 1200;
+
+  const calcWidths = headers.map(key => {
+    const len = maxLen[key];
+    const width =
+      len < 50 ? len * 8 + 23 : len * 7;             // your rule
+    return { key, width };
+  });
+
+  const totalCalcWidth  = calcWidths.reduce((s, c) => s + c.width, 0);
+  const availableWidth  = totalGridWidth - staticColumnWidth;
+
+  const scaled = calcWidths.map(c => ({
+    key: c.key,
+    width: Math.round((c.width / totalCalcWidth) * availableWidth),
+  }));
+
+  /* ── 3.  assemble columnDefs ───────────────────────────────────────────────── */
+  const colDefs: ColDef[] = [
+    {
+      headerName : 'S.no.',
+      valueGetter: 'node.rowIndex + 1',
+      width      : staticColumnWidth,
+      pinned     : 'left',
+      lockPinned : true,
+      headerClass: 'align-left',
+    },
+    ...scaled.map(c => ({
+      headerName : c.key,
+      field      : c.key,
+      width      : c.width,
+      editable   : false,
+      cellClassRules: {
+        'align-right': (p: any) => typeof p.value === 'number',
+        'align-left' : (p: any) => typeof p.value !== 'number',
+      },
+    })),
+  ];
+
+  return { colDefs, rowData };
+
+  /* ── helpers ───────────────────────────────────────────────────────────────── */
+  function cast(v: string): string | number {
+    const n = Number(v);
+    return isNaN(n) ? v : n;
+  }
+}
