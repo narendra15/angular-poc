@@ -1,0 +1,48 @@
+/****************************************************************************************
+ * 1.  Utility — parse an escaped-newline CSV string into AG-Grid inputs
+ ****************************************************************************************/
+import { ColDef } from 'ag-grid-community';
+
+/** Converts `uid,test_col_1,…\\n1,1.00,cat,ERRORS\\n…` ➜ `{colDefs,rowData}` */
+export function csvToAgGrid(payload: string): { colDefs: ColDef[]; rowData: any[] } {
+  // 1️⃣  normalise line breaks (`\n` is literally “backslash-n” in the payload)
+  const normalised = payload.replace(/\\n/g, '\n').trim();
+
+  // 2️⃣  split the header & rows
+  const [headerLine, ...dataLines] = normalised.split('\n');
+  const headers = headerLine.split(',');
+
+  // 3️⃣  build column definitions on the fly
+  const colDefs: ColDef[] = headers.map(h => ({
+    headerName: toTitleCase(h),
+    field: h,
+    sortable: true,
+    filter: true,
+    resizable: true,
+  }));
+
+  // 4️⃣  build row data
+  const rowData = dataLines
+    .filter(l => l.trim().length)
+    .map(line => {
+      const values = line.split(',');
+      return headers.reduce((obj, h, i) => {
+        obj[h] = cast(values[i]);
+        return obj;
+      }, {} as any);
+    });
+
+  return { colDefs, rowData };
+
+  /* ─── helpers ─────────────────────────────────────────────────────────────── */
+  function toTitleCase(s: string): string {
+    return s
+      .replace(/_/g, ' ')
+      .toLowerCase()
+      .replace(/\b\w/g, c => c.toUpperCase());
+  }
+  function cast(v: string): string | number {
+    const n = Number(v);
+    return isNaN(n) ? v : n;
+  }
+}
