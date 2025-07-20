@@ -1,0 +1,36 @@
+.stopwatch {
+  position: relative;
+  width: 180px;          /* match your art-board size */
+  margin: 0 auto;        /* center it */
+}
+
+.dial {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.hand {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;           /* same dimensions as dial */
+  height: auto;
+  animation: spin 2s linear infinite;
+  transform-origin: 50% 50%;   /* pivot = image centre */
+}
+
+/* Make the sweep feel “clock-like” (tick, pause, tick…):
+   Remove this block if you just want a smooth, constant rotation */
+@keyframes spin {
+  0%   { transform: rotate(  0deg); }
+  48%  { transform: rotate(174deg); } /* snap just before 180° */
+  50%  { transform: rotate(180deg); } /* tick */
+  98%  { transform: rotate(354deg); }
+  100% { transform: rotate(360deg); } /* tick */
+}
+
+/* Optional: smaller text on narrow screens */
+@media (max-width: 480px) {
+  .stopwatch { width: 140px; }
+}
