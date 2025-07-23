@@ -1,0 +1,26 @@
+/** ---------- types (optional) ---------- */
+interface RoleEntry        { roles: string[]; }      // { roles: ["P","R"] }
+interface UserAppsMap      { [app: string]: RoleEntry; }
+interface UserAppsRolesObj { user_apps: UserAppsMap; }
+
+/** ---------- converter ---------- */
+export function buildUserAppsRoles(codes: string[]): UserAppsRolesObj {
+  const userApps: UserAppsMap = {};
+
+  codes.forEach(code => {
+    const [appRaw, role] = code.split('-');           // "SHR-P" -> ["SHR","P"]
+    if (!appRaw || !role) return;                     // guard against bad values
+
+    const app = appRaw.toLowerCase();                 // match JSON keys in screenshot
+
+    // create bucket if it doesn't exist
+    if (!userApps[app]) userApps[app] = { roles: [] };
+
+    // de-duplicate before pushing
+    if (!userApps[app].roles.includes(role)) {
+      userApps[app].roles.push(role);
+    }
+  });
+
+  return { user_apps: userApps };
+}
