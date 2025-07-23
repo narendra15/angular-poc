@@ -1,0 +1,12 @@
+// Add this helper function at the top of your component or in a utils file
+function convertKeysToLowerCase(obj: any): any {
+  if (Array.isArray(obj)) {
+    return obj.map(item => convertKeysToLowerCase(item));
+  } else if (obj !== null && typeof obj === 'object') {
+    return Object.keys(obj).reduce((acc, key) => {
+      acc[key.toLowerCase()] = convertKeysToLowerCase(obj[key]);
+      return acc;
+    }, {} as any);
+  }
+  return obj;
+}
