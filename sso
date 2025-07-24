@@ -24,3 +24,48 @@ export function buildUserAppsRoles(codes: string[]): UserAppsRolesObj {
 
   return { user_apps: userApps };
 }
+
+
+
+
+
+
+
+
+/* ---------- role-utils.ts  (additions in ✨ comments) ---------- */
+
+export type Role = 'P' | 'R' | 'A';
+export interface UserAppsRoles { [app: string]: { roles: Role[] } }
+
+/* LOW ➜ HIGH priority order */
+const ROLE_ORDER: Role[] = ['P', 'R', 'A'];
+
+/* ✨ get the app whose key is alphabetically FIRST */
+export function getDefaultApp(userApps: UserAppsRoles): string | null {
+  const keys = Object.keys(userApps).sort();        // alphabetical
+  return keys.length ? keys[0] : null;
+}
+
+/* ✨ return the same array, sorted P < R < A */
+export function sortRoles(roles: Role[]): Role[] {
+  return [...roles].sort((a, b) =>
+    ROLE_ORDER.indexOf(a) - ROLE_ORDER.indexOf(b)
+  );
+}
+
+/* lowest-priority role according to ROLE_ORDER */
+export function getLowestRole(roles: Role[]): Role | null {
+  return sortRoles(roles)[0] ?? null;
+}
+
+/* ✨ Convenience: everything in one call */
+export function getDefaults(
+  userApps: UserAppsRoles,
+  chosenApp?: string
+): { app: string | null; roles: Role[]; defaultRole: Role | null } {
+  const app = chosenApp?.toLowerCase() || getDefaultApp(userApps);
+  if (!app || !userApps[app]) return { app: null, roles: [], defaultRole: null };
+
+  const rolesSorted = sortRoles(userApps[app].roles);
+  return { app, roles: rolesSorted, defaultRole: rolesSorted[0] ?? null };
+}
