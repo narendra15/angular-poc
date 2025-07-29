@@ -752,3 +752,72 @@ export function csvToGrid(payload: string): { colDefs: ColDef[]; rowData: any[] 
   ];
 
   return { colDefs, rowData };
+
+
+
+/////////// With Json //////////
+
+
+export function buildGridFromJson(data: Record<string, any>[]): {
+  colDefs: ColDef[];
+  rowData: any[];
+} {
+  if (!data?.length) {
+    return { colDefs: [], rowData: [] };
+  }
+
+  /* 1.  header order from first object’s keys */
+  const headers = Object.keys(data[0]);
+
+  /* 2.  detect numeric-only columns for alignment */
+  const numericOnly: Record<string, boolean> = {};
+  headers.forEach(h => {
+    numericOnly[h] = data.every(row => {
+      const v = row[h];
+      return v === '' || v === null || v === undefined || !isNaN(+v);
+    });
+  });
+
+  /* 3.  width overrides in one place */
+  function getCustomWidth(key: string): number | undefined {
+    if (key === 'col_1')              { return 150; }     // exact
+    if (key.includes('account'))      { return 220; }     // substring
+    if (/^amt_/i.test(key))           { return 120; }     // regex
+    return undefined;                                 // AG-Grid default
+  }
+
+  /* 4.  build column definitions */
+  const statusKey = 'cfuf_status_cd';
+
+  const makeCol = (key: string): ColDef => ({
+    headerName    : key === statusKey ? 'Status' : key,
+    field         : key,
+    width         : getCustomWidth(key),          // undefined ⇒ default
+    editable      : false,
+    tooltipValueGetter: (p: any) => p.value ?? '',
+    cellClassRules: {
+      'align-right': (p: any) => numericOnly[key] && p.value !== '',
+      'align-left' : (p: any) => !numericOnly[key] || p.value === '',
+    },
+  });
+
+  const statusCol = makeCol(statusKey);
+  const otherCols = headers.filter(h => h !== statusKey).map(makeCol);
+
+  const colDefs: ColDef[] = [
+    {
+      headerName : 'S.no.',
+      valueGetter: 'node.rowIndex + 1',
+      width      : 75,
+      pinned     : 'left',
+      lockPinned : true,
+      headerClass: 'align-left',
+      tooltipValueGetter: (p: any) => p.value,
+    },
+    statusCol,
+    ...otherCols,
+  ];
+
+  /* 5.  rowData is the original array – no changes */
+  return { colDefs, rowData: data };
+}
