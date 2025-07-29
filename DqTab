@@ -382,3 +382,106 @@ export function csvToGrid(payload: string): { colDefs: ColDef[]; rowData: any[] 
 
   return { colDefs, rowData };
 }
+
+
+
+
+
+
+//// update to column widths 
+
+
+/******************************************************************************
+ * csvToGrid()  – escaped‑newline CSV ➜ { colDefs, rowData }
+ *   • Keeps empty cells blank (no “0”).
+ *   • Treats a column as numeric only if *every* non‑empty value is a number.
+ *   • Sizes each column directly from content length (no scaling).
+ *   • cfuf_status_cd ➜ header “Status” and appears after S.no.
+ *
+ * Remove the ColDef import if you don’t want type checking.
+ ******************************************************************************/
+import type { ColDef } from 'ag-grid-community'; // ← optional
+
+export function csvToGrid(payload: string): { colDefs: ColDef[]; rowData: any[] } {
+  /* ── 1.  header & data lines ─────────────────────────────────────────────── */
+  const [headerLine, ...dataLines] =
+    payload.replace(/\\n/g, '\n').trimEnd().split('\n');
+
+  const headers = headerLine.split(',');
+
+  /* ── 2.  detect numeric‑only columns & keep raw rows ─────────────────────── */
+  const numericOnly: Record<string, boolean> = Object.fromEntries(
+    headers.map(h => [h, true]),
+  );
+  const numberRE = /^-?\d+(?:\.\d+)?$/;
+
+  const rawRows = dataLines
+    .filter(Boolean)
+    .map(line => {
+      const cells = line.split(',');
+      headers.forEach((h, i) => {
+        const v = (cells[i] ?? '').trim();
+        if (v !== '' && !numberRE.test(v)) numericOnly[h] = false;
+      });
+      return cells;
+    });
+
+  /* ── 3.  build rowData & record max string length for each column ────────── */
+  const maxLen: Record<string, number> = Object.fromEntries(
+    headers.map(h => [h, h.length]),
+  );
+
+  const rowData = rawRows.map(cells => {
+    const obj: Record<string, any> = {};
+    headers.forEach((h, i) => {
+      const raw = (cells[i] ?? '').trim();
+      const val =
+        raw === ''               ? '' :
+        numericOnly[h]           ? Number(raw) :
+                                   raw;               // keep as string
+      obj[h] = val;
+      maxLen[h] = Math.max(maxLen[h], String(val).length);
+    });
+    return obj;
+  });
+
+  /* ── 4.  column width = f(content length); no scaling ────────────────────── */
+  const widthInfo = headers.map(key => {
+    const len = maxLen[key];
+    const width = len < 50 ? len * 8 + 23 : len * 7;   // your original rule
+    return { key, width };
+  });
+
+  /* ── 5.  produce columnDefs, moving cfuf_status_cd after S.no. ───────────── */
+  const statusKey = 'cfuf_status_cd';
+
+  const makeCol = ({ key, width }: { key: string; width: number }): ColDef => ({
+    headerName    : key === statusKey ? 'Status' : key,
+    field         : key,
+    width,
+    editable      : false,
+    cellClassRules: {
+      'align-right': (p: any) => numericOnly[key] && p.value !== '',
+      'align-left' : (p: any) => !numericOnly[key] || p.value === '',
+    },
+  });
+
+  const statusCol  = widthInfo.filter(w => w.key === statusKey).map(makeCol)[0];
+  const otherCols  = widthInfo.filter(w => w.key !== statusKey).map(makeCol);
+
+  const colDefs: ColDef[] = [
+    {
+      headerName : 'S.no.',
+      valueGetter: 'node.rowIndex + 1',
+      width      : 75,
+      pinned     : 'left',
+      lockPinned : true,
+      headerClass: 'align-left',
+    },
+    statusCol,      // second position
+    ...otherCols,
+  ];
+
+  return { colDefs, rowData };
+}
+
