@@ -663,3 +663,92 @@ export function csvToGrid(payload: string): { colDefs: ColDef[]; rowData: any[] 
   ];
 
   return { colDefs, rowData };
+
+
+
+
+
+
+
+
+///// update 5 /////
+
+
+
+/* ── 1.  header + rows ───────────────────────────────────────────────────── */
+  const [headerLine, ...dataLines] =
+    payload.replace(/\\n/g, '\n').trimEnd().split('\n');
+
+  const headers = headerLine.split(',');
+
+  /* ── 2.  detect numeric‑only columns for alignment ───────────────────────── */
+  const numRe = /^-?\d+(?:\.\d+)?$/;
+  const numericOnly: Record<string, boolean> = Object.fromEntries(
+    headers.map(h => [h, true]),
+  );
+
+  const rawRows = dataLines
+    .filter(Boolean)
+    .map(line => {
+      const parts = line.split(',');
+      headers.forEach((h, i) => {
+        const v = (parts[i] ?? '').trim();
+        if (v !== '' && !numRe.test(v)) numericOnly[h] = false;
+      });
+      return parts;
+    });
+
+  /* ── 3.  build rowData (empty cells stay '') ─────────────────────────────── */
+  const rowData = rawRows.map(parts => {
+    const obj: Record<string, any> = {};
+    headers.forEach((h, i) => {
+      const raw = (parts[i] ?? '').trim();
+      obj[h] = raw === ''               ? '' :
+               numericOnly[h]           ? Number(raw) :
+                                          raw;
+    });
+    return obj;
+  });
+
+  /* ── 4.  YOUR custom‑width rules in one place ────────────────────────────── */
+  function getCustomWidth(colKey: string): number | undefined {
+    // Examples – tweak / add as needed
+    if (colKey === 'col_1')           { return 150; }        // exact match
+    if (colKey.includes('account'))   { return 220; }        // substring
+    if (/^amt_/i.test(colKey))        { return 120; }        // regex match
+    // return undefined ⇢ AG‑Grid default width
+  }
+
+  /* ── 5.  build columnDefs, move Status after S.no. ───────────────────────── */
+  const statusKey = 'cfuf_status_cd';
+
+  const makeCol = (key: string): ColDef => ({
+    headerName    : key === statusKey ? 'Status' : key,
+    field         : key,
+    editable      : false,
+    tooltipValueGetter: (p: any) => p.value ?? '',
+    width         : getCustomWidth(key),
+    cellClassRules: {
+      'align-right': (p: any) => numericOnly[key] && p.value !== '',
+      'align-left' : (p: any) => !numericOnly[key] || p.value === '',
+    },
+  });
+
+  const statusCol = makeCol(statusKey);
+  const otherCols = headers.filter(h => h !== statusKey).map(makeCol);
+
+  const colDefs: ColDef[] = [
+    {
+      headerName : 'S.no.',
+      valueGetter: 'node.rowIndex + 1',
+      width      : 75,
+      pinned     : 'left',
+      lockPinned : true,
+      headerClass: 'align-left',
+      tooltipValueGetter: (p: any) => p.value,
+    },
+    statusCol,
+    ...otherCols,
+  ];
+
+  return { colDefs, rowData };
