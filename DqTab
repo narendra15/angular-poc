@@ -576,3 +576,90 @@ export function csvToGrid(payload: string): { colDefs: ColDef[]; rowData: any[] 
   ];
 
   return { colDefs, rowData };
+
+
+
+//// update 4 ////////
+
+/* ── 1.  header + rows ───────────────────────────────────────────────────── */
+  const [headerLine, ...dataLines] =
+    payload.replace(/\\n/g, '\n').trimEnd().split('\n');
+
+  const headers = headerLine.split(',');
+
+  /* ── 2.  detect numeric-only columns ─────────────────────────────────────── */
+  const numericOnly: Record<string, boolean> = Object.fromEntries(
+    headers.map(h => [h, true]),
+  );
+  const numRe = /^-?\d+(?:\.\d+)?$/;
+
+  const rawRows = dataLines
+    .filter(Boolean)
+    .map(line => {
+      const cells = line.split(',');
+      headers.forEach((h, i) => {
+        const v = (cells[i] ?? '').trim();
+        if (v !== '' && !numRe.test(v)) numericOnly[h] = false;
+      });
+      return cells;
+    });
+
+  /* ── 3.  build rowData + maxContentLength per column ─────────────────────── */
+  const maxLen: Record<string, number> = Object.fromEntries(
+    headers.map(h => [h, h.length]),
+  );
+
+  const rowData = rawRows.map(cells => {
+    const obj: Record<string, any> = {};
+    headers.forEach((h, i) => {
+      const raw = (cells[i] ?? '').trim();
+      const val =
+        raw === ''         ? '' :
+        numericOnly[h]     ? Number(raw) :
+                             raw;
+      obj[h]  = val;
+      maxLen[h] = Math.max(maxLen[h], String(val).length);
+    });
+    return obj;
+  });
+
+  /* ── 4.  WIDTH LOGIC (taken from screenshot) ─────────────────────────────── */
+  const widthInfo = headers.map(k => {
+    const len = maxLen[k];
+    const width = len < 50
+      ? len * 8 + 23
+      : len * 7;
+    return { key: k, width };
+  });
+
+  /* ── 5.  build columnDefs, put Status second ─────────────────────────────── */
+  const statusKey = 'cfuf_status_cd';
+
+  const colFrom = ({ key, width }: { key: string; width: number }): ColDef => ({
+    headerName    : key === statusKey ? 'Status' : key,
+    field         : key,
+    width,
+    editable      : false,
+    cellClassRules: {
+      'align-right': (p: any) => numericOnly[key] && p.value !== '',
+      'align-left' : (p: any) => !numericOnly[key] || p.value === '',
+    },
+  });
+
+  const statusCol = widthInfo.filter(w => w.key === statusKey).map(colFrom)[0];
+  const otherCols = widthInfo.filter(w => w.key !== statusKey).map(colFrom);
+
+  const colDefs: ColDef[] = [
+    {
+      headerName : 'S.no.',
+      valueGetter: 'node.rowIndex + 1',
+      width      : 75,     // staticColumnWidth from your code
+      pinned     : 'left',
+      lockPinned : true,
+      headerClass: 'align-left',
+    },
+    statusCol,
+    ...otherCols,
+  ];
+
+  return { colDefs, rowData };
