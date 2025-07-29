@@ -278,3 +278,107 @@ csvToGrid(payload: string): { colDefs: ColDef[]; rowData: any[] } {
     return isNaN(n) ? v : n;
   }
 }
+
+
+
+
+
+
+
+
+// Updated code to fix issue
+
+export function csvToGrid(payload: string): { colDefs: ColDef[]; rowData: any[] } {
+  /* ── 1.  split CSV into header + rows ────────────────────────────────────── */
+  const [headerLine, ...dataLines] =
+    payload.replace(/\\n/g, '\n').trimEnd().split('\n');
+
+  const headers = headerLine.split(',');
+
+  /* ── 2.  first pass: collect raw rows & detect “numeric‑only” columns ────── */
+  const numberRegex = /^-?\d+(?:\.\d+)?$/;
+  const numericOnly: Record<string, boolean> = Object.fromEntries(
+    headers.map(h => [h, true])
+  );
+
+  const rawRows = dataLines
+    .filter(Boolean)
+    .map(line => {
+      const cells = line.split(',');
+      headers.forEach((h, i) => {
+        const v = cells[i]?.trim() ?? '';
+        if (v !== '' && !numberRegex.test(v)) numericOnly[h] = false;
+      });
+      return cells;
+    });
+
+  /* ── 3.  second pass: build rowData & track max string length per column ── */
+  const maxLen: Record<string, number> = Object.fromEntries(
+    headers.map(h => [h, h.length])
+  );
+
+  const rowData = rawRows.map(cells => {
+    const obj: Record<string, any> = {};
+    headers.forEach((h, i) => {
+      const raw = cells[i]?.trim() ?? '';
+      let val: string | number = raw;               // default as string
+      if (raw !== '' && numericOnly[h]) val = Number(raw);
+
+      obj[h]  = val;
+      maxLen[h] = Math.max(maxLen[h], String(val).length);
+    });
+    return obj;
+  });
+
+  /* ── 4.  calculate widths (same formula you use) ────────────────────────── */
+  const staticWidth = 75;                     // S.no.
+  const gridWidth   = window.innerWidth || 1200;
+
+  const calcWidths = headers.map(k => {
+    const len = maxLen[k];
+    const w   = len < 50 ? len * 8 + 23 : len * 7;
+    return { key: k, width: w };
+  });
+
+  const totalCalc = calcWidths.reduce((s, c) => s + c.width, 0);
+  const availW    = gridWidth - staticWidth;
+
+  const scaled = calcWidths.map(c => ({
+    key  : c.key,
+    width: Math.round((c.width / totalCalc) * availW),
+  }));
+
+  /* ── 5.  build columnDefs; move cfuf_status_cd after S.no. ───────────────── */
+  const statusKey = 'cfuf_status_cd';
+
+  const makeCol = (c: { key: string; width: number }): ColDef => ({
+    headerName    : c.key === statusKey ? 'Status' : c.key,
+    field         : c.key,
+    width         : c.width,
+    editable      : false,
+    cellClassRules: {
+      'align-right': (p: any) =>
+        numericOnly[c.key] && p.value !== '',
+      'align-left' : (p: any) =>
+        !numericOnly[c.key] || p.value === '',
+    },
+  });
+
+  const statusCol = scaled.filter(c => c.key === statusKey).map(makeCol)[0];
+  const otherCols = scaled.filter(c => c.key !== statusKey).map(makeCol);
+
+  const colDefs: ColDef[] = [
+    {
+      headerName : 'S.no.',
+      valueGetter: 'node.rowIndex + 1',
+      width      : staticWidth,
+      pinned     : 'left',
+      lockPinned : true,
+      headerClass: 'align-left',
+    },
+    statusCol,        // second position
+    ...otherCols,
+  ];
+
+  return { colDefs, rowData };
+}
