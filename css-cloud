@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Updating Database Animation</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: system-ui, sans-serif;
+  display: grid;
+  place-items: center;
+  height: 100vh;
+}
+
+/* ───────────── Visual wrapper ───────────── */
+.scene {
+  position: relative;
+  width: 200px;          /* tweak to match your artwork */
+  aspect-ratio: 1 / 1.2; /* keeps height proportional */
+}
+
+/* ───────────── Clouds ───────────── */
+.cloud {
+  position: absolute;
+  width: 60px;           /* scale cloud size here */
+  aspect-ratio: 2 / 1;   /* simple oval */
+  background: #c8d8e8;   /* light blue */
+  border-radius: 50%;
+  filter: blur(1px);
+  opacity: 0.75;
+}
+
+.cloud::after, .cloud::before {          /* little puffs */
+  content: "";
+  position: absolute;
+  background: inherit;
+  border-radius: 50%;
+}
+
+.cloud::before {
+  width: 70%; height: 70%;
+  top: -35%; left: 10%;
+}
+.cloud::after {
+  width: 55%; height: 55%;
+  top: -15%; right: 8%;
+}
+
+/* Cloud paths */
+.cloud1 { top: 15%; left: 0; animation: drift1 16s ease-in-out infinite; }
+.cloud2 { top: 50%; right: -10%; animation: drift2 22s ease-in-out infinite; }
+
+@keyframes drift1 {   /* left ⇄ right */
+  0%, 100% { transform: translateX(0); }
+  50%      { transform: translateX(40px); }
+}
+@keyframes drift2 {   /* right ⇄ left (longer path) */
+  0%, 100% { transform: translateX(0); }
+  50%      { transform: translateX(-60px); }
+}
+
+/* ───────────── Stopwatch ───────────── */
+.stopwatch {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+/* dial (static) */
+.dial {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+/* hand (rotating; pivot at bottom‑centre / “bulk” end) */
+.hand {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 100%;
+  animation: sweep 2s linear infinite;
+}
+
+@keyframes sweep {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* ───────────── Caption ───────────── */
+.caption {
+  margin-top: 1rem;
+  text-align: center;
+  font-size: 0.95rem;
+}
+
+.caption small { font-size: 0.8rem; color: #555; }
+</style>
+</head>
+<body>
+
+<div class="scene">
+  <div class="cloud cloud1"></div>
+  <div class="cloud cloud2"></div>
+
+  <div class="stopwatch">
+    <img src="dial.svg"  alt="" class="dial">
+    <img src="hand.svg"  alt="" class="hand">
+  </div>
+</div>
+
+<p class="caption">
+  Still updating database…<br>
+  <small>It may take up to 15 minutes to display the file.</small>
+</p>
+
+</body>
+</html>
