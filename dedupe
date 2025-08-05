@@ -1,0 +1,89 @@
+// utils/dedupe-csv.ts
+export function dedupeCsvByKeys(csv: string, keys: string[]): string {
+  if (!csv?.trim()) return csv;
+
+  const { headers, rows } = parseCsv(csv);
+  const keyIndexes = keys.map(k => {
+    const i = headers.indexOf(k);
+    if (i === -1) throw new Error(`Key column "${k}" not found in CSV headers`);
+    return i;
+  });
+
+  const seen = new Set<string>();
+  const kept: string[][] = [];
+
+  for (const row of rows) {
+    const key = keyIndexes.map(i => row[i] ?? '').join('\u0001'); // composite key
+    if (!seen.has(key)) {
+      seen.add(key);
+      kept.push(row); // keep first
+    }
+  }
+
+  return toCsv(headers, kept);
+}
+
+/* ---------- small CSV parse/emit helpers (quote-aware) ---------- */
+
+function parseCsv(input: string): { headers: string[]; rows: string[][] } {
+  const lines = input.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+  // drop trailing empty lines
+  while (lines.length && lines[lines.length - 1].trim() === '') lines.pop();
+  if (lines.length === 0) return { headers: [], rows: [] };
+
+  const headers = parseCsvLine(lines[0]);
+  const rows: string[][] = [];
+  for (let i = 1; i < lines.length; i++) {
+    if (lines[i].trim() === '') continue;
+    rows.push(parseCsvLine(lines[i]));
+  }
+  return { headers, rows };
+}
+
+function parseCsvLine(line: string): string[] {
+  const out: string[] = [];
+  let cur = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+
+    if (inQuotes) {
+      if (ch === '"') {
+        // escaped quote?
+        if (i + 1 < line.length && line[i + 1] === '"') {
+          cur += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        cur += ch;
+      }
+    } else {
+      if (ch === ',') {
+        out.push(cur);
+        cur = '';
+      } else if (ch === '"') {
+        inQuotes = true;
+      } else {
+        cur += ch;
+      }
+    }
+  }
+  out.push(cur);
+  return out;
+}
+
+function toCsv(headers: string[], rows: string[][]): string {
+  const esc = (v: string) => {
+    const needsQuotes = /[",\n\r]/.test(v);
+    const s = v.replace(/"/g, '""');
+    return needsQuotes ? `"${s}"` : s;
+  };
+  const lines = [
+    headers.map(esc).join(','),
+    ...rows.map(r => r.map(x => esc(String(x ?? ''))).join(',')),
+  ];
+  return lines.join('\r\n'); // Windows-friendly
+}
