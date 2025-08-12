@@ -1,0 +1,201 @@
+// tabs.store.ts
+// ------------------------------------------------------
+// A very lightweight, global tab state store using Angular signals.
+// This store lets ONE global header display tabs, with the current
+// visible/active panel component defining the tab list and default active.
+// Clicking in the header updates the active tab, and the owning panel reacts.
+// ------------------------------------------------------
+
+import { signal, computed } from '@angular/core';
+
+export type Tab = { key: string; label: string; disabled?: boolean };
+
+// ------------------------------------------------------
+// Internal signals
+// ------------------------------------------------------
+
+// Which panel currently "owns" the header tabs.
+// This ensures only the active panel can modify the tab list or active tab.
+const _owner  = signal<string | null>(null);
+
+// The list of tabs to display in the header.
+const _tabs   = signal<Tab[]>([]);
+
+// The key of the currently active tab.
+const _active = signal<string | null>(null);
+
+// ------------------------------------------------------
+// Public store API
+// ------------------------------------------------------
+export const tabsStore = {
+  /**
+   * Computed signal: the current list of tabs for the header to render.
+   */
+  tabs: computed(() => _tabs()),
+
+  /**
+   * Computed signal: the currently active tab key.
+   */
+  active: computed(() => _active()),
+
+  /**
+   * Computed signal: whether there are any tabs to display.
+   * Used by the header to decide whether to show/hide itself.
+   */
+  hasTabs: computed(() => _tabs().length > 0),
+
+  /**
+   * Called by the HEADER when the user clicks on a tab link.
+   * Updates the active tab if the clicked tab is valid and not disabled.
+   */
+  select(key: string) {
+    if (_tabs().some(t => t.key === key && !t.disabled)) {
+      _active.set(key);
+    }
+  },
+
+  /**
+   * Called by a PANEL to take control of the header tabs.
+   * - `panelId`   : Unique identifier for this panel instance.
+   * - `tabs`      : The tab list to show in the header.
+   * - `defaultKey`: Optional key to set as active. If omitted, uses first non-disabled tab.
+   */
+  claim(panelId: string, tabs: Tab[], defaultKey?: string) {
+    _owner.set(panelId);
+    _tabs.set(tabs);
+    _active.set(defaultKey ?? tabs.find(t => !t.disabled)?.key ?? null);
+  },
+
+  /**
+   * Called by a PANEL (only if it is the current owner) to update the tab list dynamically.
+   * If the current active tab is no longer valid, it will switch to the first valid tab.
+   */
+  updateTabs(panelId: string, tabs: Tab[]) {
+    if (_owner() !== panelId) return; // Only the owning panel can change tabs
+    _tabs.set(tabs);
+
+    const cur = _active();
+    const stillValid = cur && tabs.some(t => t.key === cur && !t.disabled);
+    if (!stillValid) {
+      _active.set(tabs.find(t => !t.disabled)?.key ?? null);
+    }
+  },
+
+  /**
+   * Called by a PANEL (only if it is the current owner) to change the active tab
+   * from inside the panel itself (e.g., programmatic tab change).
+   */
+  setActiveFromPanel(panelId: string, key: string) {
+    if (_owner() !== panelId) return;
+    if (_tabs().some(t => t.key === key && !t.disabled)) {
+      _active.set(key);
+    }
+  },
+
+  /**
+   * Called by a PANEL when it is being destroyed or hidden.
+   * If the panel is the current owner, it releases control and clears the tabs.
+   */
+  release(panelId: string) {
+    if (_owner() !== panelId) return;
+    _owner.set(null);
+    _tabs.set([]);
+    _active.set(null);
+  },
+};
+
+
+
+
+
+
+
+
+////////////////// header //////////////////////
+// tabs-header.component.ts
+import { Component, computed } from '@angular/core';
+import { NgFor, NgIf, NgClass } from '@angular/common';
+import { tabsStore } from './tabs.store';
+
+@Component({
+  selector: 'app-tabs-header',
+  standalone: true,
+  imports: [NgFor, NgIf, NgClass],
+  styles: [`
+    .tabbar{display:flex; gap:.5rem; border-bottom:1px solid #e5e7eb;}
+    .tab{padding:.5rem .75rem; border-radius:.5rem .5rem 0 0; cursor:pointer;
+         border:1px solid transparent; border-bottom:none; user-select:none;}
+    .tab.active{background:#fff; border-color:#e5e7eb;}
+    .tab:not(.active):hover{background:#f5f5f5;}
+    .tab.disabled{opacity:.5; pointer-events:none;}
+  `],
+  template: `
+    <div *ngIf="hasTabs()" class="tabbar" role="tablist" aria-label="Tabs">
+      <button
+        *ngFor="let t of tabs()"
+        class="tab" [ngClass]="{active: active()===t.key, disabled: t.disabled}"
+        role="tab"
+        [attr.aria-selected]="active()===t.key"
+        [attr.aria-disabled]="t.disabled || null"
+        (click)="onSelect(t.key)"
+      >{{ t.label }}</button>
+    </div>
+  `
+})
+export class TabsHeaderComponent {
+  tabs   = computed(() => tabsStore.tabs());
+  active = computed(() => tabsStore.active());
+  hasTabs = computed(() => tabsStore.hasTabs());
+
+  onSelect(key: string) { tabsStore.select(key); }
+}
+
+
+
+
+///////////////// component panel ////////////////////
+// orders-panel.component.ts
+import { Component, Input, OnInit, OnDestroy, computed } from '@angular/core';
+import { NgSwitch, NgSwitchCase, NgSwitchDefault } from '@angular/common';
+import { tabsStore, type Tab } from './tabs.store';
+
+@Component({
+  selector: 'app-orders-panel',
+  standalone: true,
+  imports: [NgSwitch, NgSwitchCase, NgSwitchDefault],
+  template: `
+    <div class="panel">
+      <ng-container [ngSwitch]="active()">
+        <div *ngSwitchCase="'overview'">Orders overview…</div>
+        <div *ngSwitchCase="'pending'">Pending orders…</div>
+        <div *ngSwitchCase="'completed'">Completed orders…</div>
+        <div *ngSwitchDefault>Select a tab</div>
+      </ng-container>
+    </div>
+  `,
+  styles: [`.panel{padding:1rem; border:1px solid #e5e7eb; border-radius:.5rem; background:#fff;}`]
+})
+export class OrdersPanelComponent implements OnInit, OnDestroy {
+  // Ensure uniqueness if multiple panels can exist simultaneously
+  @Input() panelId = 'orders';
+
+  active = computed(() => tabsStore.active());
+
+  ngOnInit() {
+    const tabs: Tab[] = [
+      { key: 'overview',  label: 'Overview' },
+      { key: 'pending',   label: 'Pending' },
+      { key: 'completed', label: 'Completed' },
+    ];
+    // This panel defines the header tabs
+    tabsStore.claim(this.panelId, tabs, 'overview');
+  }
+
+  // (Optional) change active from inside the panel
+  go(key: string) { tabsStore.setActiveFromPanel(this.panelId, key); }
+
+  // (Optional) if your panel changes tab list later
+  updateTabs(newTabs: Tab[]) { tabsStore.updateTabs(this.panelId, newTabs); }
+
+  ngOnDestroy() { tabsStore.release(this.panelId); }
+}
