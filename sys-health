@@ -1,0 +1,369 @@
+1. models.ts
+
+export type IsoDate = `${number}-${number}-${number}`;
+export type ShStatus = 'S' | 'W' | 'E';
+
+export interface ShRaw {
+  sh_report_date: string;
+  sh_file_display_ctgry: string;
+  sh_file_ctgry: 'S' | 'A' | 'M' | 'L';
+  Sh_active_rec_ind: 'A' | 'I';
+  sh_feed_load_date?: string;
+  sh_status?: ShStatus;
+  sh_record_source_cnt?: number;
+  sh_record_target_cnt?: number;
+}
+
+export interface DayMeta {
+  date: IsoDate;
+  isWeekend: boolean;
+  isFuture: boolean;
+  isPastOrToday: boolean;
+}
+
+export type CellKind =
+  | 'Success'
+  | 'Warning'
+  | 'Error'
+  | 'NotReceived'
+  | 'NotGenerated'
+  | 'Blank';
+
+export interface Cell {
+  date: IsoDate;
+  kind: CellKind;
+  shStatus?: ShStatus;
+  tooltip?: TooltipData;
+  colSpan?: number;
+}
+
+export interface Row {
+  id: string;
+  label: string;
+  cells: Cell[];
+}
+
+export interface TooltipData {
+  title: string;
+  fields: Array<{ label: string; value: string | number }>;
+  actions?: Array<{ label: string; action: 'validation-checks' }>;
+}
+
+export interface MappingColumn {
+  id: string;
+  label: string;
+  status: CellKind;
+  shStatus?: ShStatus;
+  tooltip?: TooltipData;
+}
+
+
+//////////////////////////////////////////////////////////////
+
+2. ingest.ts
+
+
+import { ShRaw, Row, Cell, DayMeta, IsoDate, CellKind } from './models';
+
+/**
+ * Prepares day metadata for the given month.
+ */
+export function buildDayMeta(year: number, month: number): DayMeta[] {
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const today = new Date();
+
+  return Array.from({ length: daysInMonth }, (_, i) => {
+    const date = new Date(year, month - 1, i + 1);
+    const isoDate = date.toISOString().slice(0, 10) as IsoDate;
+    return {
+      date: isoDate,
+      isWeekend: [0, 6].includes(date.getDay()),
+      isFuture: date > today,
+      isPastOrToday: date <= today,
+    };
+  });
+}
+
+/**
+ * Converts raw data into grid rows with daily cells or one monthly cell.
+ */
+export function ingestData(rawData: ShRaw[], dayMeta: DayMeta[]): Row[] {
+  const grouped: Record<string, ShRaw[]> = {};
+
+  // Group by category
+  for (const record of rawData) {
+    if (!grouped[record.sh_file_display_ctgry]) {
+      grouped[record.sh_file_display_ctgry] = [];
+    }
+    grouped[record.sh_file_display_ctgry].push(record);
+  }
+
+  return Object.entries(grouped).map(([category, records]) => {
+    const isMonthly = category.toLowerCase().includes('monthly');
+
+    if (isMonthly) {
+      // For monthly rows: create one cell spanning the whole month
+      const latest = records[0];
+      const cell: Cell = {
+        date: latest.sh_report_date as IsoDate,
+        kind: getCellKind(latest),
+        shStatus: latest.sh_status,
+        tooltip: buildTooltip(latest),
+        colSpan: dayMeta.length,
+      };
+      return { id: category, label: category, cells: [cell] };
+    }
+
+    // For daily rows
+    const cells: Cell[] = dayMeta.map((day) => {
+      const rec = records.find((r) => r.sh_report_date === day.date);
+      if (!rec) return { date: day.date, kind: 'NotReceived' };
+      return {
+        date: day.date,
+        kind: getCellKind(rec),
+        shStatus: rec.sh_status,
+        tooltip: buildTooltip(rec),
+      };
+    });
+
+    return { id: category, label: category, cells };
+  });
+}
+
+/**
+ * Determines cell kind based on sh_status and arrival.
+ */
+function getCellKind(rec: ShRaw): CellKind {
+  if (!rec.sh_feed_load_date) return 'NotReceived';
+  switch (rec.sh_status) {
+    case 'S':
+      return 'Success';
+    case 'W':
+      return 'Warning';
+    case 'E':
+      return 'Error';
+    default:
+      return 'NotGenerated';
+  }
+}
+
+/**
+ * Builds tooltip data for a cell.
+ */
+function buildTooltip(rec: ShRaw) {
+  return {
+    title: rec.sh_file_display_ctgry,
+    fields: [
+      { label: 'Report Date', value: rec.sh_report_date },
+      { label: 'Status', value: rec.sh_status ?? 'N/A' },
+      { label: 'Source Count', value: rec.sh_record_source_cnt ?? '-' },
+      { label: 'Target Count', value: rec.sh_record_target_cnt ?? '-' },
+    ],
+    actions: [{ label: 'View Validation Checks', action: 'validation-checks' }],
+  };
+}
+
+
+//////////////////////////////////////
+3. timeline-grid.component.ts
+
+
+import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { Cell, DayMeta, TooltipData } from '../models';
+import { StatusIndicatorComponent } from './status-indicator.component';
+import { TooltipCardComponent } from './tooltip-card.component';
+import { NgFor, NgIf, NgSwitch, NgSwitchCase, NgSwitchDefault } from '@angular/common';
+
+@Component({
+  standalone: true,
+  selector: 'app-timeline-grid',
+  imports: [NgFor, NgIf, NgSwitch, NgSwitchCase, NgSwitchDefault, StatusIndicatorComponent, TooltipCardComponent],
+  styles: [`
+    .wrap { overflow:auto; border:1px solid #e5e7eb; border-radius:8px; }
+    .row { display:grid; grid-auto-flow:column; grid-auto-columns: var(--day-col-width, 42px); align-items:center; }
+    .stick { position:sticky; left:0; background:white; z-index:1; padding:8px 12px; border-right:1px solid #f1f5f9; font-weight:600; }
+    .cell { display:grid; place-items:center; height:34px; border-left:1px solid #f8fafc; }
+    .hdr { color:#475569; border-bottom:1px solid #eef2f7; }
+    .hdr-stick { position:sticky; left:0; background:white; z-index:2; padding:8px 12px; border-right:1px solid #f1f5f9; }
+    .hdr-cell { height: var(--hdr-height, 70px); display:grid; place-items:end center; padding-bottom:6px; border-left:1px solid #f8fafc; }
+    .hdr-rot { transform-origin: bottom center; white-space:nowrap; font-size:12px; transform: rotate(var(--hdr-angle, -60deg)); }
+    .wknd { background:#f8fafc; }
+    .monthly { background:#f9fafb; border-left:1px solid #eef2f7; border-right:1px solid #eef2f7; height:34px; }
+  `],
+  template: `
+    <div class="wrap" [style.--day-col-width.px]="dayColumnWidth" [style.--hdr-height.px]="headerRowHeight" [style.--hdr-angle]="headerAngle">
+      <div class="row hdr">
+        <div class="hdr-stick">{{ headerTitle }}</div>
+        <div *ngFor="let label of headers; let i=index" class="hdr-cell" [title]="fullHeaderTitles?.[i] || label">
+          <span class="hdr-rot" *ngIf="rotateHeaders; else noRotate">{{ label }}</span>
+          <ng-template #noRotate>{{ label }}</ng-template>
+        </div>
+      </div>
+
+      <div *ngFor="let r of rows" class="row">
+        <div class="stick">{{ r.label }}</div>
+        <ng-container *ngIf="hasMonthlySpan(r); else dailyCells">
+          <div class="cell monthly" [style.gridColumn]="monthlyGridColumnSpan" (click)="handleClick($event, r.cells[0])">
+            <ng-container [ngSwitch]="r.cells[0]?.kind">
+              <app-status-indicator *ngSwitchCase="'Success'" label="Success" variant="green"></app-status-indicator>
+              <app-status-indicator *ngSwitchCase="'Warning'" label="Warning" variant="amber"></app-status-indicator>
+              <app-status-indicator *ngSwitchCase="'Error'"   label="Error"   variant="red"></app-status-indicator>
+              <app-status-indicator *ngSwitchCase="'NotReceived'" label="File not received" variant="ring"></app-status-indicator>
+              <app-status-indicator *ngSwitchCase="'NotGenerated'" label="Not Generated" variant="red"></app-status-indicator>
+              <span *ngSwitchDefault>-</span>
+            </ng-container>
+          </div>
+        </ng-container>
+
+        <ng-template #dailyCells>
+          <div *ngFor="let c of r.cells; let i = index"
+               class="cell"
+               [class.wknd]="dayMeta[i]?.isWeekend && c.kind==='Blank'"
+               (click)="handleClick($event, c)">
+            <ng-container [ngSwitch]="c.kind">
+              <app-status-indicator *ngSwitchCase="'Success'" label="Success" variant="green"></app-status-indicator>
+              <app-status-indicator *ngSwitchCase="'Warning'" label="Warning" variant="amber"></app-status-indicator>
+              <app-status-indicator *ngSwitchCase="'Error'"   label="Error"   variant="red"></app-status-indicator>
+              <app-status-indicator *ngSwitchCase="'NotReceived'" label="File not received" variant="ring"></app-status-indicator>
+              <app-status-indicator *ngSwitchCase="'NotGenerated'" label="Not Generated" variant="red"></app-status-indicator>
+            </ng-container>
+          </div>
+        </ng-template>
+      </div>
+    </div>
+
+    <app-tooltip-card [open]="tipOpen" [data]="tipData" [x]="tipXY.x" [y]="tipXY.y" (close)="tipOpen=false" (action)="nav.emit($event)" />
+  `
+})
+export class TimelineGridComponent {
+  @Input() headerTitle = '';
+  @Input() headers: string[] = [];
+  @Input() fullHeaderTitles?: string[];
+  @Input() dayMeta: DayMeta[] = [];
+  @Input() rows: Array<{ label: string; cells: (Cell & { colSpan?: number })[] }> = [];
+  @Input() rotateHeaders = true;
+  @Input() headerAngle: string = '-60deg';
+  @Input() dayColumnWidth = 42;
+  @Input() headerRowHeight = 78;
+  @Output() nav = new EventEmitter<'validation-checks'>();
+
+  tipOpen = false;
+  tipData?: TooltipData;
+  tipXY = { x: 0, y: 0 };
+
+  hasMonthlySpan(row: { cells: (Cell & { colSpan?: number })[] }): boolean {
+    return row.cells.length === 1 && !!row.cells[0]?.colSpan && row.cells[0].colSpan! > 1;
+  }
+  get monthlyGridColumnSpan(): string {
+    return `2 / span ${this.headers.length}`;
+  }
+  handleClick(ev: MouseEvent, cell: Cell | undefined) {
+    if (!cell?.tooltip) return;
+    this.tipData = cell.tooltip;
+    const rect = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+    this.tipXY = { x: rect.left + rect.width + 8 + window.scrollX, y: rect.top + window.scrollY };
+    this.tipOpen = true;
+  }
+}
+
+
+
+//////////////////////////////
+4. status-indicator.component.ts
+
+import { Component, Input } from '@angular/core';
+import { NgIf } from '@angular/common';
+
+@Component({
+  standalone: true,
+  selector: 'app-status-indicator',
+  imports: [NgIf],
+  styles: [`
+    .dot { width:12px; height:12px; border-radius:50%; display:inline-block; }
+    .green { background:#22c55e; }
+    .amber { background:#f59e0b; }
+    .red { background:#ef4444; }
+    .ring { border:2px solid #ef4444; background:transparent; }
+  `],
+  template: `<span class="dot" [ngClass]="variant"></span>`
+})
+export class StatusIndicatorComponent {
+  @Input() variant: 'green' | 'amber' | 'red' | 'ring' = 'green';
+  @Input() label = '';
+}
+
+
+
+////////////////////////////
+5. tooltip-card.component.ts
+
+
+import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { NgFor, NgIf } from '@angular/common';
+import { TooltipData } from '../models';
+
+@Component({
+  standalone: true,
+  selector: 'app-tooltip-card',
+  imports: [NgFor, NgIf],
+  styles: [`
+    .tooltip { position:absolute; background:white; border:1px solid #e5e7eb; border-radius:8px; padding:8px; box-shadow:0 2px 6px rgba(0,0,0,0.1); min-width:180px; z-index:50; }
+    .title { font-weight:600; margin-bottom:4px; }
+    .field { font-size:12px; margin:2px 0; }
+    .actions { margin-top:6px; font-size:12px; color:#2563eb; cursor:pointer; }
+  `],
+  template: `
+    <div *ngIf="open" class="tooltip" [style.left.px]="x" [style.top.px]="y">
+      <div class="title">{{ data?.title }}</div>
+      <div *ngFor="let f of data?.fields" class="field">{{ f.label }}: {{ f.value }}</div>
+      <div *ngIf="data?.actions" class="actions" (click)="onAction(data?.actions[0].action)">
+        {{ data?.actions[0].label }}
+      </div>
+    </div>
+  `
+})
+export class TooltipCardComponent {
+  @Input() open = false;
+  @Input() data?: TooltipData;
+  @Input() x = 0;
+  @Input() y = 0;
+  @Output() close = new EventEmitter<void>();
+  @Output() action = new EventEmitter<'validation-checks'>();
+
+  onAction(act: 'validation-checks') {
+    this.action.emit(act);
+  }
+}
+
+
+
+////////////////////////////////////
+
+DummyJson
+
+[
+  { "sh_report_date": "2025-06-01", "sh_file_display_ctgry": "QRM", "sh_file_ctgry": "S", "Sh_active_rec_ind": "A", "sh_feed_load_date": "2025-06-01", "sh_status": "S", "sh_record_source_cnt": 100, "sh_record_target_cnt": 100 },
+  { "sh_report_date": "2025-06-02", "sh_file_display_ctgry": "QRM", "sh_file_ctgry": "S", "Sh_active_rec_ind": "A", "sh_feed_load_date": "2025-06-02", "sh_status": "W", "sh_record_source_cnt": 95, "sh_record_target_cnt": 100 },
+  { "sh_report_date": "2025-06-03", "sh_file_display_ctgry": "QRM", "sh_file_ctgry": "S", "Sh_active_rec_ind": "A", "sh_feed_load_date": "2025-06-03", "sh_status": "E", "sh_record_source_cnt": 0, "sh_record_target_cnt": 100 },
+
+  { "sh_report_date": "2025-06-30", "sh_file_display_ctgry": "QRM Monthly", "sh_file_ctgry": "S", "Sh_active_rec_ind": "A", "sh_feed_load_date": "2025-06-30", "sh_status": "S", "sh_record_source_cnt": 500, "sh_record_target_cnt": 500 },
+
+  { "sh_report_date": "2025-06-01", "sh_file_display_ctgry": "APMS", "sh_file_ctgry": "S", "Sh_active_rec_ind": "A", "sh_feed_load_date": "2025-06-01", "sh_status": "S", "sh_record_source_cnt": 200, "sh_record_target_cnt": 200 },
+  { "sh_report_date": "2025-06-30", "sh_file_display_ctgry": "APMS Monthly", "sh_file_ctgry": "S", "Sh_active_rec_ind": "A", "sh_feed_load_date": "2025-06-30", "sh_status": "W", "sh_record_source_cnt": 450, "sh_record_target_cnt": 500 },
+
+  { "sh_report_date": "2025-06-01", "sh_file_display_ctgry": "BMO SM", "sh_file_ctgry": "S", "Sh_active_rec_ind": "A", "sh_feed_load_date": "2025-06-01", "sh_status": "E", "sh_record_source_cnt": 0, "sh_record_target_cnt": 300 },
+
+  { "sh_report_date": "2025-06-01", "sh_file_display_ctgry": "ADAxJW", "sh_file_ctgry": "S", "Sh_active_rec_ind": "A", "sh_feed_load_date": "2025-06-01", "sh_status": "S", "sh_record_source_cnt": 150, "sh_record_target_cnt": 150 },
+
+  { "sh_report_date": "2025-06-01", "sh_file_display_ctgry": "SDR", "sh_file_ctgry": "S", "Sh_active_rec_ind": "A", "sh_feed_load_date": "2025-06-01", "sh_status": "S", "sh_record_source_cnt": 300, "sh_record_target_cnt": 300 },
+
+  { "sh_report_date": "2025-06-01", "sh_file_display_ctgry": "AXIOM", "sh_file_ctgry": "A", "Sh_active_rec_ind": "A", "sh_feed_load_date": "2025-06-01", "sh_status": "S", "sh_record_target_cnt": 200 },
+  { "sh_report_date": "2025-06-02", "sh_file_display_ctgry": "AXIOM", "sh_file_ctgry": "A", "Sh_active_rec_ind": "A", "sh_feed_load_date": "2025-06-02", "sh_status": "E", "sh_record_target_cnt": 0 },
+
+  { "sh_report_date": "2025-06-30", "sh_file_display_ctgry": "Mapping File 1", "sh_file_ctgry": "M", "Sh_active_rec_ind": "A", "sh_feed_load_date": "2025-06-29", "sh_status": "S", "sh_record_target_cnt": 500 },
+  { "sh_report_date": "2025-06-30", "sh_file_display_ctgry": "Mapping File 2", "sh_file_ctgry": "M", "Sh_active_rec_ind": "A", "sh_feed_load_date": "2025-06-29", "sh_status": "W", "sh_record_target_cnt": 450 },
+  { "sh_report_date": "2025-06-30", "sh_file_display_ctgry": "Lookup File 1", "sh_file_ctgry": "L", "Sh_active_rec_ind": "A", "sh_feed_load_date": "2025-06-29", "sh_status": "S", "sh_record_target_cnt": 300 }
+]
+
+
+
