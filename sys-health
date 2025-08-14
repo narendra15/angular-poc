@@ -367,3 +367,169 @@ DummyJson
 
 
 
+///////////////////
+1. widgets/axiom.widget.ts
+
+import { Component, computed, inject } from '@angular/core';
+import { TimelineGridComponent } from '../components/timeline-grid.component';
+import { Store } from '../store';
+
+@Component({
+  standalone: true,
+  selector: 'app-axiom-widget',
+  imports: [TimelineGridComponent],
+  template: `
+    <app-timeline-grid
+      headerTitle="File Generation for AXIOM Status"
+      [headers]="store.headers()"
+      [fullHeaderTitles]="store.fullHeaderTitles()"
+      [dayMeta]="store.dayMeta()"
+      [rows]="axiomRows()"
+      (nav)="onNavigate($event)">
+    </app-timeline-grid>
+  `
+})
+export class AxiomWidget {
+  store = inject(Store);
+  axiomRows = computed(() =>
+    this.store.rows().filter(r => r.label.toLowerCase().includes('axiom'))
+  );
+
+  onNavigate(action: 'validation-checks') {
+    console.log('Navigate to:', action, 'for AXIOM');
+  }
+}
+
+
+
+///////////////////////
+2. widgets/source-systems.widget.ts
+
+import { Component, computed, inject } from '@angular/core';
+import { TimelineGridComponent } from '../components/timeline-grid.component';
+import { Store } from '../store';
+
+@Component({
+  standalone: true,
+  selector: 'app-source-systems-widget',
+  imports: [TimelineGridComponent],
+  template: `
+    <app-timeline-grid
+      headerTitle="Source System - Daily and Monthly File Status"
+      [headers]="store.headers()"
+      [fullHeaderTitles]="store.fullHeaderTitles()"
+      [dayMeta]="store.dayMeta()"
+      [rows]="sourceRows()"
+      (nav)="onNavigate($event)">
+    </app-timeline-grid>
+  `
+})
+export class SourceSystemsWidget {
+  store = inject(Store);
+  sourceRows = computed(() =>
+    this.store.rows().filter(r =>
+      r.label.toLowerCase().includes('source') ||
+      r.label.toLowerCase().includes('daily') ||
+      r.label.toLowerCase().includes('monthly')
+    )
+  );
+
+  onNavigate(action: 'validation-checks') {
+    console.log('Navigate to:', action, 'for Source System');
+  }
+}
+
+///////////////////////////////
+3. widgets/mapping-files.widget.ts
+
+import { Component, computed, inject } from '@angular/core';
+import { TimelineGridComponent } from '../components/timeline-grid.component';
+import { Store } from '../store';
+
+@Component({
+  standalone: true,
+  selector: 'app-mapping-files-widget',
+  imports: [TimelineGridComponent],
+  template: `
+    <app-timeline-grid
+      headerTitle="Mapping Files - Monthly Status"
+      [headers]="store.headers()"
+      [fullHeaderTitles]="store.fullHeaderTitles()"
+      [dayMeta]="store.dayMeta()"
+      [rows]="mappingRows()"
+      (nav)="onNavigate($event)">
+    </app-timeline-grid>
+  `
+})
+export class MappingFilesWidget {
+  store = inject(Store);
+  mappingRows = computed(() =>
+    this.store.rows().filter(r => r.label.toLowerCase().includes('mapping'))
+  );
+
+  onNavigate(action: 'validation-checks') {
+    console.log('Navigate to:', action, 'for Mapping Files');
+  }
+}
+
+
+//////////////////////////////
+4. store.ts
+
+
+import { Injectable, signal, computed } from '@angular/core';
+import { Row, DayMeta } from './models';
+import { buildDayMeta, ingestData } from './ingest';
+import dummyData from '../../assets/dummyData.json';
+
+@Injectable({ providedIn: 'root' })
+export class Store {
+  month = signal<number>(8); // August
+  year = signal<number>(2025);
+  dayMeta = signal<DayMeta[]>([]);
+  rows = signal<Row[]>([]);
+
+  constructor() {
+    this.load();
+  }
+
+  headers = computed(() => this.dayMeta().map(d => d.date.split('-')[2])); // Day numbers
+  fullHeaderTitles = computed(() => this.dayMeta().map(d => d.date));
+  
+  load() {
+    const meta = buildDayMeta(this.year(), this.month());
+    this.dayMeta.set(meta);
+    const processed = ingestData(dummyData as any, meta);
+    this.rows.set(processed);
+  }
+}
+
+
+
+////////////////////////////////
+5. system-health.page.ts
+
+
+import { Component } from '@angular/core';
+import { AxiomWidget } from './widgets/axiom.widget';
+import { SourceSystemsWidget } from './widgets/source-systems.widget';
+import { MappingFilesWidget } from './widgets/mapping-files.widget';
+
+@Component({
+  standalone: true,
+  selector: 'app-system-health-page',
+  imports: [AxiomWidget, SourceSystemsWidget, MappingFilesWidget],
+  template: `
+    <div class="page">
+      <app-axiom-widget></app-axiom-widget>
+      <app-source-systems-widget></app-source-systems-widget>
+      <app-mapping-files-widget></app-mapping-files-widget>
+    </div>
+  `,
+  styles: [`
+    .page { display: grid; gap: 20px; padding: 20px; }
+  `]
+})
+export class SystemHealthPage {}
+
+
