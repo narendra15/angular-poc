@@ -533,3 +533,64 @@ import { MappingFilesWidget } from './widgets/mapping-files.widget';
 export class SystemHealthPage {}
 
 
+
+
+/////////////////
+
+Updated tootltop-card-component
+
+-TS-
+
+<div *ngIf="open" class="tooltip" [style.left.px]="x" [style.top.px]="y">
+  <div class="title">{{ data?.title }}</div>
+
+  <div *ngFor="let f of data?.fields" class="field">
+    {{ f.label }}: {{ f.value }}
+  </div>
+
+  <!-- Safe: alias actions when they exist -->
+  <div *ngIf="data?.actions as actions" class="actions">
+    <button
+      *ngFor="let a of actions; trackBy: trackByIndex"
+      type="button"
+      (click)="onAction(a.action)"
+    >
+      {{ a.label }}
+    </button>
+  </div>
+</div>
+
+
+-HTML-
+
+import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { TooltipData } from '../models';
+
+@Component({
+  standalone: true,
+  selector: 'app-tooltip-card',
+  styles: [`
+    .tooltip { position:absolute; background:white; border:1px solid #e5e7eb; border-radius:8px; padding:8px; box-shadow:0 2px 6px rgba(0,0,0,0.1); min-width:180px; z-index:50; }
+    .title { font-weight:600; margin-bottom:4px; }
+    .field { font-size:12px; margin:2px 0; }
+    .actions { margin-top:6px; display:flex; gap:8px; }
+    .actions button { font-size:12px; padding:4px 8px; border:1px solid #e5e7eb; border-radius:6px; background:#f8fafc; cursor:pointer; }
+  `],
+  templateUrl: './tooltip-card.component.html'
+})
+export class TooltipCardComponent {
+  @Input() open = false;
+  @Input() data: TooltipData | null = null;
+  @Input() x = 0;
+  @Input() y = 0;
+
+  @Output() close = new EventEmitter<void>();
+  @Output() action = new EventEmitter<'validation-checks'>();
+
+  onAction(act: 'validation-checks') {
+    this.action.emit(act);
+  }
+
+  // Helps Angular with *ngFor perf and typing
+  trackByIndex = (i: number) => i;
+}
