@@ -1,0 +1,771 @@
+1) models.ts
+
+
+// src/app/system-health/models.ts
+// Tiny set of types used across the page.
+
+export type IsoDate = `${number}-${number}-${number}`; // "YYYY-MM-DD"
+export type ShStatus = 'S' | 'W' | 'E';                 // Success / Warning / Error
+
+// Raw record (mimics backend keys exactly)
+export interface ShRaw {
+  sh_report_date: string;            // date this record belongs to
+  sh_file_display_ctgry: string;     // e.g., "QRM", "QRM Monthly", "AXIOM", "Mapping File 1"
+  sh_file_ctgry: 'S' | 'A' | 'M' | 'L'; // S=Source, A=Axiom, M=Mapping, L=Lookup
+  Sh_active_rec_ind: 'A' | 'I';      // Active / Inactive
+  sh_feed_load_date?: string;        // when we received/loaded the file
+  sh_status?: ShStatus;              // S/W/E (only when a file exists for that day)
+
+  // counts (optional but shown in tooltips)
+  sh_record_source_cnt?: number;
+  sh_record_target_cnt?: number;
+}
+
+// Metadata for every day of the selected month
+export interface DayMeta {
+  date: IsoDate;
+  isWeekend: boolean;
+  isFuture: boolean;
+  isPastOrToday: boolean;
+}
+
+// What each cell renders as
+export type CellKind =
+  | 'Success'       // green dot
+  | 'Warning'       // amber dot
+  | 'Error'         // red dot
+  | 'NotReceived'   // red ring (source: no file for that day)
+  | 'NotGenerated'  // red dot (axiom: missing for a past/today date)
+  | 'Blank';        // future day or weekend (no data)
+
+// A cell in the grid
+export interface Cell {
+  date: IsoDate;
+  kind: CellKind;
+  shStatus?: ShStatus;
+  tooltip?: TooltipData;
+  colSpan?: number; // Monthly rows span all days
+}
+
+// A row in the grid (one per system label)
+export interface Row {
+  id: string;
+  label: string;
+  cells: Cell[];
+}
+
+// Tooltip content (shown on click)
+export interface TooltipData {
+  title: string;
+  fields: Array<{ label: string; value: string | number }>;
+  actions?: Array<{ label: string; action: string }>;  // kept generic on purpose
+}
+
+// For the Mapping Files widget (simple table)
+export interface MappingColumn {
+  id: string;
+  label: string;
+  status: CellKind;
+  shStatus?: ShStatus;
+  tooltip?: TooltipData;
+}
+
+
+
+/////////
+2) ingest.ts (super simple + Monthly handling)
+
+
+// src/app/system-health/ingest.ts
+// Turns raw records into UI rows/columns the components can render.
+// Everything is commented and uses clear names for easy onboarding.
+
+import { Cell, CellKind, DayMeta, MappingColumn, Row, ShRaw, ShStatus } from './models';
+
+/* ---------- helpers ---------- */
+
+// map S/W/E → visual kind
+function toCellKind(status?: ShStatus): CellKind {
+  if (status === 'S') return 'Success';
+  if (status === 'W') return 'Warning';
+  if (status === 'E') return 'Error';
+  return 'Blank';
+}
+
+// unique key for (label, date)
+function keyOf(label: string, isoDate: string) {
+  return `${label}__${isoDate}`;
+}
+
+// keep only the latest Active record for each (label, date)
+function latestActiveByKey(records: ShRaw[]) {
+  const map = new Map<string, ShRaw>();
+  for (const r of records) {
+    if (r.Sh_active_rec_ind !== 'A') continue;
+    const key = keyOf(r.sh_file_display_ctgry, r.sh_report_date);
+    const prev = map.get(key);
+    if (!prev) { map.set(key, r); continue; }
+
+    const prevTime = new Date(prev.sh_feed_load_date || prev.sh_report_date).getTime();
+    const currTime = new Date(r.sh_feed_load_date || r.sh_report_date).getTime();
+    if (currTime >= prevTime) map.set(key, r);
+  }
+  return map;
+}
+
+/* ---------- tooltips ---------- */
+
+function tooltipForSource(rec: ShRaw) {
+  // Simple wording that works for S/W/E
+  const base = [
+    { label: 'Loaded on', value: rec.sh_feed_load_date || 'NA' },
+    { label: 'Records Loaded', value: `${rec.sh_record_source_cnt ?? 0}/${rec.sh_record_target_cnt ?? 0}` }
+  ];
+  if (rec.sh_status === 'W') return { title: 'Loaded with Warnings', fields: base };
+  if (rec.sh_status === 'E') return { title: 'Load Failed', fields: base };
+  return { title: 'Loaded Successfully', fields: base };
+}
+
+function tooltipForAxiomOK(rec: ShRaw) {
+  return {
+    title: 'File Generated',
+    fields: [
+      { label: 'Last generated on', value: rec.sh_feed_load_date || 'NA' },
+      { label: 'Records Loaded', value: rec.sh_record_target_cnt ?? 0 }
+    ]
+  };
+}
+
+function tooltipForAxiomMissing() {
+  return {
+    title: 'Not Generated',
+    fields: [
+      { label: 'Last Generated on', value: 'NA' },
+      { label: 'Records Loaded', value: 0 }
+    ]
+  };
+}
+
+function tooltipForMapping(rec: ShRaw) {
+  const base = [
+    { label: 'File Date', value: rec.sh_feed_load_date || 'NA' },
+    { label: 'Records', value: rec.sh_record_target_cnt ?? 0 }
+  ];
+  const title = rec.sh_status === 'W' ? 'Submitted with Warnings'
+               : rec.sh_status === 'E' ? 'Submitted with Errors'
+               : 'Approved and Merged';
+  return { title, fields: base, actions: [{ label: 'Validation Checks', action: 'validation-checks' }] };
+}
+
+/* ---------- row/column builders ---------- */
+
+// Build rows for Source Systems (cat='S') or Axiom (cat='A')
+export function buildGridRows(all: ShRaw[], days: DayMeta[], cat: 'S' | 'A'): Row[] {
+  const pool = all.filter(r => r.sh_file_ctgry === cat && r.Sh_active_rec_ind === 'A');
+  const latest = latestActiveByKey(pool);
+  const labels = Array.from(new Set(pool.map(r => r.sh_file_display_ctgry))).sort();
+
+  return labels.map(label => {
+    const isMonthly = label.toLowerCase().includes('monthly');
+
+    if (isMonthly) {
+      // one big cell spanning all days
+      // pick any record for the label (they should all be the same for monthly)
+      const rec = Array.from(latest.values()).find(r => r.sh_file_display_ctgry === label);
+      const kind: CellKind =
+        rec ? toCellKind(rec.sh_status)
+            : (cat === 'S' ? 'NotReceived' : 'NotGenerated');
+
+      return {
+        id: `${cat}-${label}`.toLowerCase().replace(/\s+/g, '-'),
+        label,
+        cells: [{
+          date: days[0].date,
+          kind,
+          shStatus: rec?.sh_status,
+          tooltip: rec ? (cat === 'S' ? tooltipForSource(rec) : tooltipForAxiomOK(rec))
+                       : (cat === 'S' ? undefined : tooltipForAxiomMissing()),
+          colSpan: days.length
+        }]
+      };
+    }
+
+    // daily systems → one cell per day
+    const cells: Cell[] = days.map(d => {
+      const rec = latest.get(keyOf(label, d.date));
+      if (rec) {
+        return {
+          date: d.date,
+          kind: toCellKind(rec.sh_status),
+          shStatus: rec.sh_status,
+          tooltip: cat === 'S' ? tooltipForSource(rec) : tooltipForAxiomOK(rec)
+        };
+      }
+      // no record
+      if (cat === 'S') {
+        // source → show NotReceived for past/today weekdays, else blank
+        if (d.isPastOrToday && !d.isWeekend) return { date: d.date, kind: 'NotReceived' };
+        return { date: d.date, kind: 'Blank' };
+      } else {
+        // axiom → "NotGenerated" for past/today, else blank
+        return d.isPastOrToday
+          ? { date: d.date, kind: 'NotGenerated', tooltip: tooltipForAxiomMissing() }
+          : { date: d.date, kind: 'Blank' };
+      }
+    });
+
+    return {
+      id: `${cat}-${label}`.toLowerCase().replace(/\s+/g, '-'),
+      label,
+      cells
+    };
+  });
+}
+
+// Build Mapping widget columns (simple monthly snapshot)
+export function buildMappingColumns(all: ShRaw[]): MappingColumn[] {
+  const pool = all.filter(r => (r.sh_file_ctgry === 'M' || r.sh_file_ctgry === 'L') && r.Sh_active_rec_ind === 'A');
+  const labels = Array.from(new Set(pool.map(r => r.sh_file_display_ctgry))).sort();
+
+  return labels.map(label => {
+    const rec = pool
+      .filter(r => r.sh_file_display_ctgry === label)
+      .sort((a, b) => new Date(b.sh_feed_load_date || b.sh_report_date).getTime()
+                    - new Date(a.sh_feed_load_date || a.sh_report_date).getTime())[0];
+
+    return {
+      id: label.toLowerCase().replace(/\s+/g, '-'),
+      label,
+      status: toCellKind(rec?.sh_status),
+      shStatus: rec?.sh_status,
+      tooltip: rec ? tooltipForMapping(rec) : undefined
+    };
+  });
+}
+
+
+
+/////////////////////
+3) components/status-indicator.component.ts
+
+// src/app/system-health/components/status-indicator.component.ts
+import { Component, Input } from '@angular/core';
+
+@Component({
+  standalone: true,
+  selector: 'app-status-indicator',
+  styles: [`
+    :host { display:inline-block; }
+    .dot  { width:12px; height:12px; border-radius:9999px; display:inline-block; }
+    .ring { width:12px; height:12px; border-radius:9999px; border:2px solid #ef4444; }
+    .green { background:#22c55e; }
+    .amber { background:#f59e0b; }
+    .red   { background:#ef4444; }
+  `],
+  template: `
+    <span [ngClass]="cssClass()"></span>
+  `
+})
+export class StatusIndicatorComponent {
+  @Input() variant: 'green' | 'amber' | 'red' | 'ring' = 'green';
+  cssClass() {
+    return this.variant === 'ring'
+      ? 'ring'
+      : `dot ${this.variant}`;
+  }
+}
+
+
+/////////////////////////
+4) components/tooltip-card.component.ts (with close button)
+
+// src/app/system-health/components/tooltip-card.component.ts
+import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { TooltipData } from '../models';
+import { NgIf, NgFor } from '@angular/common';
+
+@Component({
+  standalone: true,
+  selector: 'app-tooltip-card',
+  imports: [NgIf, NgFor],
+  styles: [`
+    .tip { position:absolute; background:#fff; border:1px solid #e5e7eb; border-radius:8px;
+           box-shadow:0 10px 24px rgba(0,0,0,.12); min-width:220px; z-index:100; }
+    .hdr { display:flex; align-items:center; justify-content:space-between; gap:8px;
+           padding:8px 10px; border-bottom:1px solid #f1f5f9; font-weight:600; }
+    .body{ padding:8px 10px; }
+    .kv  { display:flex; justify-content:space-between; gap:10px; font-size:12px; padding:2px 0; }
+    .act { padding:8px 10px; display:flex; gap:8px; border-top:1px solid #f1f5f9; }
+    button.close { border:none; background:transparent; font-size:16px; line-height:1; cursor:pointer; }
+    button.action{ font-size:12px; padding:4px 8px; border:1px solid #e5e7eb; border-radius:6px; background:#f8fafc; cursor:pointer; }
+  `],
+  template: `
+    <div *ngIf="open" class="tip" [style.left.px]="x" [style.top.px]="y">
+      <div class="hdr">
+        <span>{{ data?.title }}</span>
+        <button class="close" aria-label="Close tooltip" (click)="close.emit()">×</button>
+      </div>
+
+      <div class="body">
+        <div *ngFor="let f of data?.fields" class="kv">
+          <span>{{f.label}}</span>
+          <span>{{f.value}}</span>
+        </div>
+      </div>
+
+      <div *ngIf="data?.actions as actions" class="act">
+        <button class="action" *ngFor="let a of actions; let i = index" (click)="action.emit(a.action)">
+          {{ a.label }}
+        </button>
+      </div>
+    </div>
+  `
+})
+export class TooltipCardComponent {
+  @Input() open = false;
+  @Input() data: TooltipData | null = null;
+  @Input() x = 0;
+  @Input() y = 0;
+
+  @Output() close = new EventEmitter<void>();
+  @Output() action = new EventEmitter<string>();
+}
+
+
+///////////////////////////////
+5) components/timeline-grid.component.ts (rotated headers + monthly span)
+
+// src/app/system-health/components/timeline-grid.component.ts
+import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { Cell, DayMeta, TooltipData } from '../models';
+import { NgFor, NgIf, NgSwitch, NgSwitchCase, NgSwitchDefault } from '@angular/common';
+import { StatusIndicatorComponent } from './status-indicator.component';
+import { TooltipCardComponent } from './tooltip-card.component';
+
+@Component({
+  standalone: true,
+  selector: 'app-timeline-grid',
+  imports: [NgFor, NgIf, NgSwitch, NgSwitchCase, NgSwitchDefault, StatusIndicatorComponent, TooltipCardComponent],
+  styles: [`
+    .wrap { overflow:auto; border:1px solid #e5e7eb; border-radius:8px; }
+    .row { display:grid; grid-auto-flow:column; grid-auto-columns: var(--col-w, 42px); align-items:center; }
+    .stick { position:sticky; left:0; background:white; z-index:1; padding:8px 12px; border-right:1px solid #f1f5f9; font-weight:600; }
+    .cell { display:grid; place-items:center; height:34px; border-left:1px solid #f8fafc; }
+    .hdr  { color:#475569; border-bottom:1px solid #eef2f7; }
+    .hdr-stick { position:sticky; left:0; background:white; z-index:2; padding:8px 12px; border-right:1px solid #f1f5f9; }
+    .hdr-cell { height: var(--hdr-h, 78px); display:grid; place-items:end center; padding-bottom:6px; border-left:1px solid #f8fafc; }
+    .rot { transform-origin: bottom center; white-space:nowrap; font-size:12px; transform: rotate(var(--hdr-angle, -60deg)); }
+    .monthly { background:#f9fafb; border-left:1px solid #eef2f7; border-right:1px solid #eef2f7; }
+    .wknd { background:#f8fafc; }
+  `],
+  template: `
+    <div class="wrap" [style.--col-w.px]="dayColumnWidth" [style.--hdr-h.px]="headerRowHeight" [style.--hdr-angle]="headerAngle">
+
+      <!-- Optional header row with rotated dates -->
+      <div *ngIf="showHeader" class="row hdr">
+        <div class="hdr-stick">{{ headerTitle }}</div>
+        <div *ngFor="let h of headers; let i=index" class="hdr-cell" [title]="fullHeaderTitles?.[i] || h">
+          <span class="rot" *ngIf="rotateHeaders; else noRotate">{{ h }}</span>
+          <ng-template #noRotate>{{ h }}</ng-template>
+        </div>
+      </div>
+
+      <!-- Data rows -->
+      <div *ngFor="let r of rows" class="row">
+        <div class="stick">{{ r.label }}</div>
+
+        <!-- Monthly: one big cell spanning all days -->
+        <ng-container *ngIf="isMonthly(r); else daily">
+          <div class="cell monthly"
+               [style.gridColumn]="gridSpanForMonthly"
+               (click)="openTip($event, r.cells[0])">
+            <ng-container [ngSwitch]="r.cells[0].kind">
+              <app-status-indicator *ngSwitchCase="'Success'" variant="green"></app-status-indicator>
+              <app-status-indicator *ngSwitchCase="'Warning'" variant="amber"></app-status-indicator>
+              <app-status-indicator *ngSwitchCase="'Error'"   variant="red"></app-status-indicator>
+              <app-status-indicator *ngSwitchCase="'NotReceived'" variant="ring"></app-status-indicator>
+              <app-status-indicator *ngSwitchCase="'NotGenerated'" variant="red"></app-status-indicator>
+              <span *ngSwitchDefault>-</span>
+            </ng-container>
+          </div>
+        </ng-container>
+
+        <!-- Daily: one cell per day -->
+        <ng-template #daily>
+          <div *ngFor="let c of r.cells; let i=index"
+               class="cell"
+               [class.wknd]="dayMeta[i]?.isWeekend && c.kind==='Blank'"
+               (click)="openTip($event, c)">
+            <ng-container [ngSwitch]="c.kind">
+              <app-status-indicator *ngSwitchCase="'Success'" variant="green"></app-status-indicator>
+              <app-status-indicator *ngSwitchCase="'Warning'" variant="amber"></app-status-indicator>
+              <app-status-indicator *ngSwitchCase="'Error'"   variant="red"></app-status-indicator>
+              <app-status-indicator *ngSwitchCase="'NotReceived'" variant="ring"></app-status-indicator>
+              <app-status-indicator *ngSwitchCase="'NotGenerated'" variant="red"></app-status-indicator>
+              <!-- Blank = nothing -->
+            </ng-container>
+          </div>
+        </ng-template>
+      </div>
+    </div>
+
+    <!-- Tooltip -->
+    <app-tooltip-card
+      [open]="tipOpen"
+      [data]="tipData"
+      [x]="tipXY.x"
+      [y]="tipXY.y"
+      (close)="tipOpen=false"
+      (action)="nav.emit($event)"
+    />
+  `
+})
+export class TimelineGridComponent {
+  // header controls
+  @Input() showHeader = true;
+  @Input() headerTitle = '';
+  @Input() headers: string[] = [];
+  @Input() fullHeaderTitles?: string[];
+  @Input() rotateHeaders = true;
+  @Input() headerAngle: string = '-60deg';
+  @Input() headerRowHeight = 78;
+
+  // grid data
+  @Input() dayMeta: DayMeta[] = [];
+  @Input() rows: Array<{ label: string; cells: (Cell & { colSpan?: number })[] }> = [];
+
+  // layout
+  @Input() dayColumnWidth = 42;
+
+  @Output() nav = new EventEmitter<string>();
+
+  tipOpen = false;
+  tipData: TooltipData | null = null;
+  tipXY = { x: 0, y: 0 };
+
+  isMonthly(r: { cells: (Cell & { colSpan?: number })[] }) {
+    return r.cells.length === 1 && !!r.cells[0].colSpan && r.cells[0].colSpan! > 1;
+  }
+  get gridSpanForMonthly() { return `2 / span ${this.headers.length}`; }
+
+  openTip(ev: MouseEvent, cell?: Cell) {
+    if (!cell?.tooltip) return;
+    const rect = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+    this.tipXY = { x: rect.left + rect.width + 8 + window.scrollX, y: rect.top + window.scrollY };
+    this.tipOpen = true;
+    this.tipData = cell.tooltip!;
+  }
+}
+
+
+//////////////////////////////
+6) widgets/axiom.widget.ts
+
+// src/app/system-health/widgets/axiom.widget.ts
+import { Component, inject } from '@angular/core';
+import { TimelineGridComponent } from '../components/timeline-grid.component';
+import { Store } from '../store';
+
+@Component({
+  standalone: true,
+  selector: 'app-axiom-widget',
+  imports: [TimelineGridComponent],
+  template: `
+    <app-timeline-grid
+      headerTitle="File Generation for AXIOM Status"
+      [showHeader]="true"
+      [headers]="store.headers"
+      [fullHeaderTitles]="store.fullHeaderTitles"
+      [dayMeta]="store.dayMeta"
+      [rows]="store.axiomRows"
+      (nav)="onNav($event)"
+    />
+  `
+})
+export class AxiomWidget {
+  store = inject(Store);
+  onNav(action: string) {
+    console.log('AXIOM action:', action);
+  }
+}
+
+/////////////////////////////
+7) widgets/source-systems.widget.ts (no header bar inside)
+
+// src/app/system-health/widgets/source-systems.widget.ts
+import { Component, inject } from '@angular/core';
+import { TimelineGridComponent } from '../components/timeline-grid.component';
+import { Store } from '../store';
+
+@Component({
+  standalone: true,
+  selector: 'app-source-systems-widget',
+  imports: [TimelineGridComponent],
+  template: `
+    <app-timeline-grid
+      [showHeader]="false"           <!-- header shown once in AXIOM -->
+      [headers]="store.headers"
+      [fullHeaderTitles]="store.fullHeaderTitles"
+      [dayMeta]="store.dayMeta"
+      [rows]="store.sourceRows"
+      (nav)="onNav($event)"
+    />
+  `
+})
+export class SourceSystemsWidget {
+  store = inject(Store);
+  onNav(action: string) {
+    console.log('Source Systems action:', action);
+  }
+}
+
+////////////////////////////////
+8) widgets/mapping-files.widget.ts (simple table, no timeline)
+
+// src/app/system-health/widgets/mapping-files.widget.ts
+import { Component, inject } from '@angular/core';
+import { NgFor } from '@angular/common';
+import { Store } from '../store';
+import { StatusIndicatorComponent } from '../components/status-indicator.component';
+import { TooltipCardComponent } from '../components/tooltip-card.component';
+
+@Component({
+  standalone: true,
+  selector: 'app-mapping-files-widget',
+  imports: [NgFor, StatusIndicatorComponent, TooltipCardComponent],
+  styles: [`
+    .wrap { overflow:auto; border:1px solid #e5e7eb; border-radius:8px; }
+    table { width:100%; border-collapse:collapse; }
+    th, td { padding:10px 12px; border-left:1px solid #f1f5f9; text-align:center; }
+    th:first-child, td:first-child { border-left:none; }
+    .title { font-weight:600; padding:8px 0 6px; }
+  `],
+  template: `
+    <div class="title">Mapping Files - Monthly Status</div>
+    <div class="wrap">
+      <table>
+        <thead>
+          <tr>
+            <th *ngFor="let c of store.mappingCols">{{ c.label }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td *ngFor="let c of store.mappingCols" (click)="openTip($event, c.tooltip)">
+              <app-status-indicator *ngIf="c.status==='Success'" variant="green"></app-status-indicator>
+              <app-status-indicator *ngIf="c.status==='Warning'" variant="amber"></app-status-indicator>
+              <app-status-indicator *ngIf="c.status==='Error'"   variant="red"></app-status-indicator>
+              <span *ngIf="c.status==='Blank'">-</span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <app-tooltip-card
+      [open]="tipOpen"
+      [data]="tipData"
+      [x]="tipXY.x"
+      [y]="tipXY.y"
+      (close)="tipOpen=false"
+      (action)="onNav($event)"
+    />
+  `
+})
+export class MappingFilesWidget {
+  store = inject(Store);
+
+  tipOpen = false;
+  tipData = null as any;
+  tipXY = { x: 0, y: 0 };
+
+  openTip(ev: MouseEvent, data: any) {
+    if (!data) return;
+    const rect = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+    this.tipXY = { x: rect.left + rect.width + 8 + window.scrollX, y: rect.top + window.scrollY };
+    this.tipData = data;
+    this.tipOpen = true;
+  }
+
+  onNav(action: string) {
+    console.log('Mapping action:', action);
+  }
+}
+
+
+/////////////////////////
+9) store.ts (tiny store + dummy data generator for ALL systems)
+
+// src/app/system-health/store.ts
+import { Injectable, signal, computed } from '@angular/core';
+import { DayMeta, MappingColumn, Row, ShRaw, IsoDate } from './models';
+import { buildGridRows, buildMappingColumns } from './ingest';
+
+// -------------- month helpers --------------
+function toIso(y: number, m0: number, d: number): IsoDate {
+  const mm = `${m0 + 1}`.padStart(2, '0');
+  const dd = `${d}`.padStart(2, '0');
+  return `${y}-${mm}-${dd}` as IsoDate;
+}
+function createDayMeta(year: number, monthIndex0: number): DayMeta[] {
+  const days = new Date(year, monthIndex0 + 1, 0).getDate();
+  const today = new Date();
+  const out: DayMeta[] = [];
+  for (let i = 1; i <= days; i++) {
+    const d = new Date(year, monthIndex0, i);
+    out.push({
+      date: toIso(year, monthIndex0, i),
+      isWeekend: d.getDay() === 0 || d.getDay() === 6,
+      isFuture: d > today,
+      isPastOrToday: d <= today
+    });
+  }
+  return out;
+}
+function headerLabels(meta: DayMeta[]) {
+  // "01, Sun" … "30, Mon"
+  const dows = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  return meta.map(m => {
+    const d = new Date(m.date);
+    return `${m.date.slice(-2)}, ${dows[d.getDay()]}`;
+  });
+}
+
+// -------------- dummy data for ALL systems --------------
+function createDummyData(year = 2025, monthIndex0 = 5 /* June */): ShRaw[] {
+  const dailySystems = ['QRM', 'APMS', 'BMO SM', 'ADAxJW', 'SDR'];
+  const monthlySystems = ['QRM Monthly', 'APMS Monthly'];
+  const mappingFiles = [
+    'Mapping File 1','Mapping File 2','Mapping File 3','Mapping File 4',
+    'Lookup File 1','Lookup File 2','Lookup File 3'
+  ];
+
+  const days = new Date(year, monthIndex0 + 1, 0).getDate();
+  const data: ShRaw[] = [];
+
+  // Daily systems: fill most days as Success, sprinkle W/E, leave some days empty (NotReceived)
+  for (const label of dailySystems) {
+    for (let d = 1; d <= days; d++) {
+      const date = toIso(year, monthIndex0, d);
+      const dow = new Date(date).getDay();
+      if (dow === 0 || dow === 6) continue; // many systems skip weekends
+
+      // choose a pattern that looks like the mock: mostly green with some issues
+      const roll = (d + label.length) % 15;
+      const status = roll === 0 ? 'E' : roll % 6 === 0 ? 'W' : 'S';
+
+      // leave a few days with no file at all → NotReceived
+      if ((d + label.length) % 11 === 0) continue;
+
+      data.push({
+        sh_report_date: date,
+        sh_file_display_ctgry: label,
+        sh_file_ctgry: 'S',
+        Sh_active_rec_ind: 'A',
+        sh_feed_load_date: date,
+        sh_status: status,
+        sh_record_source_cnt: status === 'E' ? 0 : Math.floor(80 + Math.random() * 40),
+        sh_record_target_cnt: 100
+      });
+    }
+  }
+
+  // Monthly systems: a single monthly record
+  for (const label of monthlySystems) {
+    const date = toIso(year, monthIndex0, days);
+    const status: 'S' | 'W' | 'E' = label.includes('QRM') ? 'S' : 'W';
+    data.push({
+      sh_report_date: date,
+      sh_file_display_ctgry: label,
+      sh_file_ctgry: 'S',
+      Sh_active_rec_ind: 'A',
+      sh_feed_load_date: date,
+      sh_status: status,
+      sh_record_source_cnt: 500,
+      sh_record_target_cnt: 500
+    });
+  }
+
+  // AXIOM: most days generated; some missing to show "NotGenerated"
+  for (let d = 1; d <= days; d++) {
+    const date = toIso(year, monthIndex0, d);
+    if (d % 8 === 0) continue; // simulate not generated
+    const status: 'S' | 'W' | 'E' = d % 11 === 0 ? 'E' : d % 6 === 0 ? 'W' : 'S';
+    data.push({
+      sh_report_date: date,
+      sh_file_display_ctgry: 'AXIOM',
+      sh_file_ctgry: 'A',
+      Sh_active_rec_ind: 'A',
+      sh_feed_load_date: date,
+      sh_status: status,
+      sh_record_target_cnt: 200
+    });
+  }
+
+  // Mapping + Lookup files (monthly snapshot)
+  const mapStatuses: ('S'|'W'|'E')[] = ['S','W','S','S','S','S','E'];
+  mappingFiles.forEach((label, i) => {
+    const date = toIso(year, monthIndex0, days);
+    data.push({
+      sh_report_date: date,
+      sh_file_display_ctgry: label,
+      sh_file_ctgry: label.startsWith('Lookup') ? 'L' : 'M',
+      Sh_active_rec_ind: 'A',
+      sh_feed_load_date: toIso(year, monthIndex0, days - 1),
+      sh_status: mapStatuses[i] || 'S',
+      sh_record_target_cnt: 300 + i * 50
+    });
+  });
+
+  return data;
+}
+
+// -------------- store --------------
+@Injectable({ providedIn: 'root' })
+export class Store {
+  // selected month/year (mockup shows June 2025)
+  readonly year = 2025;
+  readonly monthIndex0 = 5; // 0=Jan → 5=June
+
+  // day meta & headers (stable arrays, no signals needed for demo)
+  readonly dayMeta: DayMeta[] = createDayMeta(this.year, this.monthIndex0);
+  readonly headers: string[] = headerLabels(this.dayMeta);
+  readonly fullHeaderTitles: string[] = this.dayMeta.map(d => d.date);
+
+  // raw dummy + processed datasets
+  private readonly raw: ShRaw[] = createDummyData(this.year, this.monthIndex0);
+  readonly sourceRows: Row[] = buildGridRows(this.raw, this.dayMeta, 'S');
+  readonly axiomRows: Row[]  = buildGridRows(this.raw, this.dayMeta, 'A');
+  readonly mappingCols: MappingColumn[] = buildMappingColumns(this.raw);
+}
+
+
+////////////////////////////
+10) system-health.page.ts
+
+// src/app/system-health/system-health.page.ts
+import { Component } from '@angular/core';
+import { AxiomWidget } from './widgets/axiom.widget';
+import { SourceSystemsWidget } from './widgets/source-systems.widget';
+import { MappingFilesWidget } from './widgets/mapping-files.widget';
+
+@Component({
+  standalone: true,
+  selector: 'app-system-health-page',
+  imports: [AxiomWidget, SourceSystemsWidget, MappingFilesWidget],
+  template: `
+    <div class="page">
+      <app-axiom-widget />
+      <app-source-systems-widget />
+      <app-mapping-files-widget />
+    </div>
+  `,
+  styles: [`.page{ display:grid; gap:20px; padding:16px; }`]
+})
+export class SystemHealthPage {}
+
+
+/////////////////////////////
+
+
+
