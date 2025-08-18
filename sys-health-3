@@ -717,3 +717,118 @@ export class MappingFilesWidget {
 }
 
 
+
+
+//////// ---------- Enhancement ------------ /////////////
+
+timeline-grid.component.html
+
+
+<div class="timeline-grid">
+  <!-- Header row -->
+  <div class="header-cell file-col">File</div>
+  <div 
+    class="header-cell day-col" 
+    *ngFor="let h of fullHeaderTitles">
+    {{h}}
+  </div>
+
+  <!-- Rows -->
+  <ng-container *ngFor="let row of rows">
+    <div class="file-col">{{row.file}}</div>
+    <div 
+      class="day-col" 
+      *ngFor="let status of row.statuses">
+      <span class="dot" [ngClass]="status"></span>
+    </div>
+  </ng-container>
+</div>
+
+
+
+
+/////////////////////
+timeline-grid.component.scss
+
+
+
+.timeline-grid {
+  display: grid;
+  grid-template-columns: 150px repeat(auto-fill, 48px);
+  align-items: center;
+
+  .header-cell {
+    font-weight: bold;
+    text-align: center;
+    padding: 4px;
+    border-bottom: 1px solid #ccc;
+  }
+
+  .file-col {
+    padding: 4px;
+    font-weight: 500;
+    text-align: left;
+    border-right: 1px solid #ddd;
+  }
+
+  .day-col {
+    width: 48px;
+    height: 28px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+
+  .dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  .S { background: green; }   /* Success */
+  .W { background: orange; }  /* Warning */
+  .E { background: red; }     /* Error */
+}
+
+
+
+
+////////////////
+
+store.ts
+
+
+import { Injectable, signal, computed } from '@angular/core';
+import { Row, DayMeta } from './models';
+import { buildDayMeta, ingestData } from './data-ingest';
+import dummyData from '../../../assets/dummyData.json';
+
+@Injectable({ providedIn: 'root' })
+export class Store {
+  month = signal<number>(6);  // June
+  year = signal<number>(2025);
+  dayMeta = signal<DayMeta[]>([]);
+  rows = signal<Row[]>([]);
+
+  constructor() {
+    this.load();
+  }
+
+  headers = computed(() =>
+    this.dayMeta().map(d => d.date.split('-')[2])  // e.g. "01"
+  );
+
+  fullHeaderTitles = computed(() =>
+    this.dayMeta().map(d => d.date) // full YYYY-MM-DD
+  );
+
+  load() {
+    const meta = buildDayMeta(this.year(), this.month());
+    this.dayMeta.set(meta);
+
+    const processed = ingestData(dummyData as any, meta);
+    this.rows.set(processed);
+  }
+}
+
+
