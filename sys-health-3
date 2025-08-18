@@ -1,0 +1,478 @@
+src/app/system-health/models.ts
+
+
+
+// Types that match your existing JSON one-to-one and are easy to use in templates.
+
+export type IsoDate = `${number}-${number}-${number}`; // "YYYY-MM-DD"
+export type ShStatus = 'S' | 'W' | 'E';
+
+export interface ShRaw {
+  sh_report_date: string;            // e.g. "2025-06-01"
+  sh_file_display_ctgry: string;     // e.g. "QRM", "QRM Monthly", "AXIOM", "Mapping File 1"
+  sh_file_ctgry: 'S' | 'A' | 'M' | 'L';
+  Sh_active_rec_ind: 'A' | 'I';
+  sh_feed_load_date?: string;
+  sh_status?: ShStatus;
+  sh_record_source_cnt?: number;
+  sh_record_target_cnt?: number;
+}
+
+export interface DayMeta {
+  date: IsoDate;
+  isWeekend: boolean;
+  isFuture: boolean;
+  isPastOrToday: boolean;
+}
+
+export type CellKind =
+  | 'Success'       // green dot
+  | 'Warning'       // amber dot
+  | 'Error'         // red dot
+  | 'NotReceived'   // red ring (no record for Source)
+  | 'NotGenerated'  // red dot (AXIOM missing on past/today)
+  | 'Blank';        // weekend/future placeholder
+
+export interface TooltipData {
+  title: string;
+  fields: Array<{ label: string; value: string | number }>;
+  actions?: Array<{ label: string; action: string }>; // string for simplicity
+}
+
+export interface Cell {
+  date: IsoDate;
+  kind: CellKind;
+  shStatus?: ShStatus;
+  tooltip?: TooltipData;
+  colSpan?: number; // used only for "Monthly" rows
+}
+
+export interface Row {
+  id: string;
+  label: string;
+  cells: Cell[];
+}
+
+export interface MappingColumn {
+  id: string;
+  label: string;
+  status: CellKind;
+  shStatus?: ShStatus;
+  tooltip?: TooltipData;
+}
+
+
+
+
+
+
+
+
+
+///////////////////////////////
+2) src/app/system-health/ingest.ts
+
+
+
+// Converts your existing dummyData.json array (ShRaw[]) into UI-ready rows/columns.
+// Very small, commented, and beginner-friendly.
+
+import { Cell, CellKind, DayMeta, MappingColumn, Row, ShRaw, ShStatus } from './models';
+
+/* ------------------------------------------------
+ * Small helpers
+ * ----------------------------------------------*/
+function toCellKind(status?: ShStatus): CellKind {
+  if (status === 'S') return 'Success';
+  if (status === 'W') return 'Warning';
+  if (status === 'E') return 'Error';
+  return 'Blank';
+}
+function key(label: string, isoDate: string) { return `${label}__${isoDate}`; }
+
+/** Keep the latest Active record for each (label, date) pair. */
+function latestActive(records: ShRaw[]) {
+  const map = new Map<string, ShRaw>();
+  for (const r of records) {
+    if (r.Sh_active_rec_ind !== 'A') continue;
+    const k = key(r.sh_file_display_ctgry, r.sh_report_date);
+    const prev = map.get(k);
+    if (!prev) { map.set(k, r); continue; }
+    const tPrev = new Date(prev.sh_feed_load_date || prev.sh_report_date).getTime();
+    const tCurr = new Date(r.sh_feed_load_date || r.sh_report_date).getTime();
+    if (tCurr >= tPrev) map.set(k, r);
+  }
+  return map;
+}
+
+/* ------------------------------------------------
+ * Simple tooltip builders
+ * ----------------------------------------------*/
+function tooltipSource(rec: ShRaw) {
+  const base = [
+    { label: 'Loaded on', value: rec.sh_feed_load_date || 'NA' },
+    { label: 'Records Loaded', value: `${rec.sh_record_source_cnt ?? 0}/${rec.sh_record_target_cnt ?? 0}` }
+  ];
+  const title =
+    rec.sh_status === 'W' ? 'Loaded with Warnings' :
+    rec.sh_status === 'E' ? 'Load Failed' :
+    'Loaded Successfully';
+  return { title, fields: base };
+}
+function tooltipAxiomOK(rec: ShRaw) {
+  return {
+    title: 'File Generated',
+    fields: [
+      { label: 'Last generated on', value: rec.sh_feed_load_date || 'NA' },
+      { label: 'Records Loaded', value: rec.sh_record_target_cnt ?? 0 }
+    ]
+  };
+}
+function tooltipAxiomMissing() {
+  return {
+    title: 'Not Generated',
+    fields: [
+      { label: 'Last Generated on', value: 'NA' },
+      { label: 'Records Loaded', value: 0 }
+    ]
+  };
+}
+function tooltipMapping(rec: ShRaw) {
+  const title =
+    rec.sh_status === 'W' ? 'Submitted with Warnings' :
+    rec.sh_status === 'E' ? 'Submitted with Errors' :
+    'Approved and Merged';
+  return {
+    title,
+    fields: [
+      { label: 'File Date', value: rec.sh_feed_load_date || 'NA' },
+      { label: 'Records', value: rec.sh_record_target_cnt ?? 0 }
+    ],
+    actions: [{ label: 'Validation Checks', action: 'validation-checks' }]
+  };
+}
+
+/* ------------------------------------------------
+ * Row/Column builders used by your store/page
+ * ----------------------------------------------*/
+
+/** Build rows for Source Systems (cat='S') or AXIOM (cat='A'). */
+export function buildGridRows(all: ShRaw[], days: DayMeta[], cat: 'S' | 'A'): Row[] {
+  const pool = all.filter(r => r.sh_file_ctgry === cat && r.Sh_active_rec_ind === 'A');
+  const byKey = latestActive(pool);
+  const labels = Array.from(new Set(pool.map(r => r.sh_file_display_ctgry))).sort();
+
+  return labels.map(label => {
+    const isMonthly = label.toLowerCase().includes('monthly');
+
+    // Monthly rows → ONE big cell spanning all days
+    if (isMonthly) {
+      const anyRecord = Array.from(byKey.values()).find(r => r.sh_file_display_ctgry === label);
+      const kind: CellKind = anyRecord
+        ? toCellKind(anyRecord.sh_status)
+        : (cat === 'S' ? 'NotReceived' : 'NotGenerated');
+      return {
+        id: `${cat}-${label}`.toLowerCase().replace(/\s+/g, '-'),
+        label,
+        cells: [{
+          date: days[0].date,
+          kind,
+          shStatus: anyRecord?.sh_status,
+          tooltip: anyRecord
+            ? (cat === 'S' ? tooltipSource(anyRecord) : tooltipAxiomOK(anyRecord))
+            : (cat === 'S' ? undefined : tooltipAxiomMissing()),
+          colSpan: days.length
+        }]
+      };
+    }
+
+    // Daily rows → one cell per day
+    const cells: Cell[] = days.map(d => {
+      const rec = byKey.get(key(label, d.date));
+      if (rec) {
+        return {
+          date: d.date,
+          kind: toCellKind(rec.sh_status),
+          shStatus: rec.sh_status,
+          tooltip: cat === 'S' ? tooltipSource(rec) : tooltipAxiomOK(rec)
+        };
+      }
+      // No record:
+      if (cat === 'S') {
+        // For past/today weekdays show "NotReceived" ring; otherwise leave blank.
+        if (d.isPastOrToday && !d.isWeekend) return { date: d.date, kind: 'NotReceived' };
+        return { date: d.date, kind: 'Blank' };
+      } else {
+        // For AXIOM show "NotGenerated" on past/today, else blank.
+        return d.isPastOrToday
+          ? { date: d.date, kind: 'NotGenerated', tooltip: tooltipAxiomMissing() }
+          : { date: d.date, kind: 'Blank' };
+      }
+    });
+
+    return { id: `${cat}-${label}`.toLowerCase().replace(/\s+/g, '-'), label, cells };
+  });
+}
+
+/** Build columns for Mapping Files (monthly snapshot). */
+export function buildMappingColumns(all: ShRaw[]): MappingColumn[] {
+  const pool = all.filter(r => (r.sh_file_ctgry === 'M' || r.sh_file_ctgry === 'L') && r.Sh_active_rec_ind === 'A');
+  const labels = Array.from(new Set(pool.map(r => r.sh_file_display_ctgry))).sort();
+
+  return labels.map(label => {
+    const rec = pool
+      .filter(r => r.sh_file_display_ctgry === label)
+      .sort((a, b) =>
+        new Date(b.sh_feed_load_date || b.sh_report_date).getTime() -
+        new Date(a.sh_feed_load_date || a.sh_report_date).getTime()
+      )[0];
+
+    return {
+      id: label.toLowerCase().replace(/\s+/g, '-'),
+      label,
+      status: toCellKind(rec?.sh_status),
+      shStatus: rec?.sh_status,
+      tooltip: rec ? tooltipMapping(rec) : undefined
+    };
+  });
+}
+
+
+
+
+
+
+
+///////////////////////
+
+3) src/app/system-health/components/status-indicator.component.ts
+
+
+
+import { Component, Input } from '@angular/core';
+
+@Component({
+  standalone: true,
+  selector: 'app-status-indicator',
+  styles: [`
+    :host { display:inline-block; line-height:0; }
+    .dot  { width:12px; height:12px; border-radius:9999px; display:inline-block; }
+    .ring { width:12px; height:12px; border-radius:9999px; border:2px solid #ef4444; }
+    .green { background:#22c55e; }
+    .amber { background:#f59e0b; }
+    .red   { background:#ef4444; }
+  `],
+  template: `<span [ngClass]="classes()"></span>`
+})
+export class StatusIndicatorComponent {
+  @Input() variant: 'green'|'amber'|'red'|'ring' = 'green';
+  classes() { return this.variant === 'ring' ? 'ring' : `dot ${this.variant}`; }
+}
+
+
+
+
+
+
+//////////////////////////////
+4) src/app/system-health/components/tooltip-card.component.ts
+
+
+
+import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { NgIf, NgFor } from '@angular/common';
+import { TooltipData } from '../models';
+
+@Component({
+  standalone: true,
+  selector: 'app-tooltip-card',
+  imports: [NgIf, NgFor],
+  styles: [`
+    .tip { position:absolute; background:#fff; border:1px solid #e5e7eb; border-radius:8px;
+           box-shadow:0 10px 24px rgba(0,0,0,.12); min-width:220px; z-index:100; }
+    .hdr { display:flex; align-items:center; justify-content:space-between; gap:8px;
+           padding:8px 10px; border-bottom:1px solid #f1f5f9; font-weight:600; }
+    .body{ padding:8px 10px; }
+    .kv  { display:flex; justify-content:space-between; gap:10px; font-size:12px; padding:2px 0; }
+    .act { padding:8px 10px; display:flex; gap:8px; border-top:1px solid #f1f5f9; }
+    button.close { border:none; background:transparent; font-size:16px; line-height:1; cursor:pointer; }
+    button.action{ font-size:12px; padding:4px 8px; border:1px solid #e5e7eb; border-radius:6px; background:#f8fafc; cursor:pointer; }
+  `],
+  template: `
+    <div *ngIf="open" class="tip" [style.left.px]="x" [style.top.px]="y">
+      <div class="hdr">
+        <span>{{ data?.title }}</span>
+        <button class="close" aria-label="Close tooltip" (click)="close.emit()">×</button>
+      </div>
+
+      <div class="body">
+        <div *ngFor="let f of data?.fields" class="kv">
+          <span>{{ f.label }}</span>
+          <span>{{ f.value }}</span>
+        </div>
+      </div>
+
+      <div *ngIf="data?.actions as actions" class="act">
+        <button class="action" *ngFor="let a of actions; let i = index"
+                type="button" (click)="action.emit(a.action)">
+          {{ a.label }}
+        </button>
+      </div>
+    </div>
+  `
+})
+export class TooltipCardComponent {
+  @Input() open = false;
+  @Input() data: TooltipData | null = null;
+  @Input() x = 0;
+  @Input() y = 0;
+
+  @Output() close = new EventEmitter<void>();
+  @Output() action = new EventEmitter<string>();
+}
+
+
+
+
+
+////////////////////////////
+5) src/app/system-health/components/timeline-grid.component.ts
+
+
+
+
+
+
+import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { NgFor, NgIf, NgSwitch, NgSwitchCase } from '@angular/common';
+import { Cell, DayMeta, TooltipData } from '../models';
+import { StatusIndicatorComponent } from './status-indicator.component';
+import { TooltipCardComponent } from './tooltip-card.component';
+
+@Component({
+  standalone: true,
+  selector: 'app-timeline-grid',
+  imports: [NgFor, NgIf, NgSwitch, NgSwitchCase, StatusIndicatorComponent, TooltipCardComponent],
+  styles: [`
+    .wrap { overflow:auto; border:1px solid #e5e7eb; border-radius:8px; }
+    .row { display:grid; grid-auto-flow:column; grid-auto-columns: var(--col-w, 42px); align-items:center; }
+    .stick { position:sticky; left:0; background:white; z-index:1; padding:8px 12px; border-right:1px solid #f1f5f9; font-weight:600; }
+    .cell { display:grid; place-items:center; height:34px; border-left:1px solid #f8fafc; }
+    .hdr  { color:#475569; border-bottom:1px solid #eef2f7; }
+    .hdr-stick { position:sticky; left:0; background:white; z-index:2; padding:8px 12px; border-right:1px solid #f1f5f9; }
+    .hdr-cell { height: var(--hdr-h, 78px); display:grid; place-items:end center; padding-bottom:6px; border-left:1px solid #f8fafc; }
+    .rot { transform-origin: bottom center; white-space:nowrap; font-size:12px; transform: rotate(var(--hdr-angle, -60deg)); }
+    .monthly { background:#f9fafb; border-left:1px solid #eef2f7; border-right:1px solid #eef2f7; }
+    .wknd { background:#f8fafc; }
+  `],
+  template: `
+    <div class="wrap" [style.--col-w.px]="dayColumnWidth" [style.--hdr-h.px]="headerRowHeight" [style.--hdr-angle]="headerAngle">
+
+      <!-- Optional header row with rotated dates -->
+      <div *ngIf="showHeader" class="row hdr">
+        <div class="hdr-stick">{{ headerTitle }}</div>
+        <div *ngFor="let h of headers; let i=index" class="hdr-cell" [title]="fullHeaderTitles?.[i] || h">
+          <span class="rot" *ngIf="rotateHeaders; else plain">{{ h }}</span>
+          <ng-template #plain>{{ h }}</ng-template>
+        </div>
+      </div>
+
+      <!-- Data rows -->
+      <div *ngFor="let r of rows" class="row">
+        <div class="stick">{{ r.label }}</div>
+
+        <!-- Monthly row: single merged cell -->
+        <ng-container *ngIf="isMonthly(r); else dailyRow">
+          <div class="cell monthly"
+               [style.gridColumn]="gridSpanForMonthly"
+               (click)="openTip($event, r.cells[0])">
+            <ng-container [ngSwitch]="r.cells[0].kind">
+              <app-status-indicator *ngSwitchCase="'Success'" variant="green"></app-status-indicator>
+              <app-status-indicator *ngSwitchCase="'Warning'" variant="amber"></app-status-indicator>
+              <app-status-indicator *ngSwitchCase="'Error'"   variant="red"></app-status-indicator>
+              <app-status-indicator *ngSwitchCase="'NotReceived'" variant="ring"></app-status-indicator>
+              <app-status-indicator *ngSwitchCase="'NotGenerated'" variant="red"></app-status-indicator>
+            </ng-container>
+          </div>
+        </ng-container>
+
+        <!-- Daily row: one cell per day -->
+        <ng-template #dailyRow>
+          <div *ngFor="let c of r.cells; let i=index"
+               class="cell"
+               [class.wknd]="dayMeta[i]?.isWeekend && c.kind==='Blank'"
+               (click)="openTip($event, c)">
+            <ng-container [ngSwitch]="c.kind">
+              <app-status-indicator *ngSwitchCase="'Success'" variant="green"></app-status-indicator>
+              <app-status-indicator *ngSwitchCase="'Warning'" variant="amber"></app-status-indicator>
+              <app-status-indicator *ngSwitchCase="'Error'"   variant="red"></app-status-indicator>
+              <app-status-indicator *ngSwitchCase="'NotReceived'" variant="ring"></app-status-indicator>
+              <app-status-indicator *ngSwitchCase="'NotGenerated'" variant="red"></app-status-indicator>
+              <!-- Blank: render nothing -->
+            </ng-container>
+          </div>
+        </ng-template>
+      </div>
+    </div>
+
+    <!-- Tooltip -->
+    <app-tooltip-card
+      [open]="tipOpen"
+      [data]="tipData"
+      [x]="tipXY.x"
+      [y]="tipXY.y"
+      (close)="tipOpen=false"
+      (action)="nav.emit($event)"
+    />
+  `
+})
+export class TimelineGridComponent {
+  // Header controls
+  @Input() showHeader = true;
+  @Input() headerTitle = '';
+  @Input() headers: string[] = [];
+  @Input() fullHeaderTitles?: string[];
+  @Input() rotateHeaders = true;
+  @Input() headerAngle: string = '-60deg';
+  @Input() headerRowHeight = 78;
+
+  // Data
+  @Input() dayMeta: DayMeta[] = [];
+  @Input() rows: Array<{ label: string; cells: (Cell & { colSpan?: number })[] }> = [];
+
+  // Layout
+  @Input() dayColumnWidth = 42;
+
+  @Output() nav = new EventEmitter<string>();
+
+  tipOpen = false;
+  tipData: TooltipData | null = null;
+  tipXY = { x: 0, y: 0 };
+
+  isMonthly(r: { cells: (Cell & { colSpan?: number })[] }) {
+    return r.cells.length === 1 && !!r.cells[0].colSpan && r.cells[0].colSpan! > 1;
+  }
+  get gridSpanForMonthly() { return `2 / span ${this.headers.length}`; }
+
+  openTip(ev: MouseEvent, cell?: Cell) {
+    if (!cell?.tooltip) return;
+    const rect = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+    this.tipXY = { x: rect.left + rect.width + 8 + window.scrollX, y: rect.top + window.scrollY };
+    this.tipOpen = true;
+    this.tipData = cell.tooltip!;
+  }
+}
+
+
+
+
+
+
+
+
+
+
+/////////////////////////
+6) src/app/system-health/store.ts
+
+
