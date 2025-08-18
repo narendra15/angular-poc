@@ -476,3 +476,244 @@ export class TimelineGridComponent {
 6) src/app/system-health/store.ts
 
 
+
+
+import { Injectable, signal, computed } from '@angular/core';
+import { DayMeta, Row, MappingColumn, ShRaw, IsoDate } from './models';
+import { buildGridRows, buildMappingColumns } from './ingest';
+// NOTE: tweak the path to your assets folder as needed:
+import dummyData from '../../../assets/dummyData.json';
+
+/**
+ * Build DayMeta for the given (year, month).
+ * month is 1..12 (e.g., 6 = June).
+ */
+function buildDayMeta(year: number, month: number): DayMeta[] {
+  const daysInMonth = new Date(year, month, 0).getDate();       // month is 1..12
+  const today = new Date();
+
+  const toIso = (y: number, m: number, d: number): IsoDate => {
+    const mm = String(m).padStart(2, '0');
+    const dd = String(d).padStart(2, '0');
+    return `${y}-${mm}-${dd}` as IsoDate;
+  };
+
+  return Array.from({ length: daysInMonth }, (_, i) => {
+    const day = i + 1;
+    const date = new Date(year, month - 1, day);
+    const iso = toIso(year, month, day);
+    return {
+      date: iso,
+      isWeekend: date.getDay() === 0 || date.getDay() === 6,
+      isFuture: date > today,
+      isPastOrToday: date <= today
+    };
+  });
+}
+
+@Injectable({ providedIn: 'root' })
+export class Store {
+  /**
+   * IMPORTANT: your dummyData.json in the screenshot is **June 2025**.
+   * Set month=6 and year=2025 so headers align with the data.
+   */
+  month = signal<number>(6);     // 6 = June
+  year  = signal<number>(2025);
+
+  // raw calendar + processed rows/columns
+  dayMeta = signal<DayMeta[]>([]);
+  sourceRows = signal<Row[]>([]);
+  axiomRows  = signal<Row[]>([]);
+  mappingCols = signal<MappingColumn[]>([]);
+
+  constructor() { this.load(); }
+
+  /** "01, Sun" style header labels */
+  headers = computed(() => {
+    const dows = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    return this.dayMeta().map(dm => {
+      const d = new Date(dm.date);
+      return `${dm.date.slice(-2)}, ${dows[d.getDay()]}`;
+    });
+  });
+
+  /** Full ISO dates for header tooltips */
+  fullHeaderTitles = computed(() => this.dayMeta().map(d => d.date));
+
+  /** Build everything from the JSON + selected month */
+  load() {
+    const meta = buildDayMeta(this.year(), this.month());
+    this.dayMeta.set(meta);
+
+    const raw = dummyData as ShRaw[];  // your existing JSON array
+
+    // Build rows per widget
+    this.sourceRows.set(buildGridRows(raw, meta, 'S'));
+    this.axiomRows.set(buildGridRows(raw, meta, 'A'));
+    this.mappingCols.set(buildMappingColumns(raw));
+  }
+
+  // ---- simple getters so templates don't need to call .() on signals ----
+  get headersValue()         { return this.headers(); }
+  get fullHeaderTitlesValue(){ return this.fullHeaderTitles(); }
+  get dayMetaValue()         { return this.dayMeta(); }
+  get sourceRowsValue()      { return this.sourceRows(); }
+  get axiomRowsValue()       { return this.axiomRows(); }
+  get mappingColsValue()     { return this.mappingCols(); }
+}
+
+
+
+
+
+///////////////////////////////////
+
+7) src/app/system-health/widgets/axiom.widget.ts
+
+
+
+
+
+import { Component, inject } from '@angular/core';
+import { TimelineGridComponent } from '../components/timeline-grid.component';
+import { Store } from '../store';
+
+@Component({
+  standalone: true,
+  selector: 'app-axiom-widget',
+  imports: [TimelineGridComponent],
+  template: `
+    <app-timeline-grid
+      headerTitle="File Generation for AXIOM Status"
+      [showHeader]="true"
+      [headers]="store.headersValue"
+      [fullHeaderTitles]="store.fullHeaderTitlesValue"
+      [dayMeta]="store.dayMetaValue"
+      [rows]="store.axiomRowsValue"
+      (nav)="onNav($event)"
+    />
+  `
+})
+export class AxiomWidget {
+  store = inject(Store);
+  onNav(action: string) {
+    // Hook up real navigation here if you have a route or modal
+    console.log('AXIOM action:', action);
+  }
+}
+
+
+
+
+//////////////////////////////
+
+8) src/app/system-health/widgets/source-systems.widget.ts
+
+
+
+
+import { Component, inject } from '@angular/core';
+import { TimelineGridComponent } from '../components/timeline-grid.component';
+import { Store } from '../store';
+
+@Component({
+  standalone: true,
+  selector: 'app-source-systems-widget',
+  imports: [TimelineGridComponent],
+  template: `
+    <!-- No header here per your doc; header is shown already in AXIOM -->
+    <app-timeline-grid
+      [showHeader]="false"
+      [headers]="store.headersValue"
+      [fullHeaderTitles]="store.fullHeaderTitlesValue"
+      [dayMeta]="store.dayMetaValue"
+      [rows]="store.sourceRowsValue"
+      (nav)="onNav($event)"
+    />
+  `
+})
+export class SourceSystemsWidget {
+  store = inject(Store);
+  onNav(action: string) {
+    console.log('Source Systems action:', action);
+  }
+}
+
+
+
+
+//////////////////////
+
+9) src/app/system-health/widgets/mapping-files.widget.ts
+
+import { Component, inject } from '@angular/core';
+import { NgFor } from '@angular/common';
+import { Store } from '../store';
+import { StatusIndicatorComponent } from '../components/status-indicator.component';
+import { TooltipCardComponent } from '../components/tooltip-card.component';
+import { TooltipData } from '../models';
+
+@Component({
+  standalone: true,
+  selector: 'app-mapping-files-widget',
+  imports: [NgFor, StatusIndicatorComponent, TooltipCardComponent],
+  styles: [`
+    .wrap { overflow:auto; border:1px solid #e5e7eb; border-radius:8px; }
+    .title { font-weight:600; padding:8px 0 6px; }
+    table { width:100%; border-collapse:collapse; }
+    th, td { padding:10px 12px; border-left:1px solid #f1f5f9; text-align:center; }
+    th:first-child, td:first-child { border-left:none; }
+  `],
+  template: `
+    <div class="title">Mapping Files - Monthly Status</div>
+    <div class="wrap">
+      <table>
+        <thead>
+          <tr>
+            <th *ngFor="let c of store.mappingColsValue">{{ c.label }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td *ngFor="let c of store.mappingColsValue" (click)="openTip($event, c.tooltip)">
+              <app-status-indicator *ngIf="c.status==='Success'" variant="green"></app-status-indicator>
+              <app-status-indicator *ngIf="c.status==='Warning'" variant="amber"></app-status-indicator>
+              <app-status-indicator *ngIf="c.status==='Error'"   variant="red"></app-status-indicator>
+              <span *ngIf="c.status==='Blank'">-</span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <app-tooltip-card
+      [open]="tipOpen"
+      [data]="tipData"
+      [x]="tipXY.x"
+      [y]="tipXY.y"
+      (close)="tipOpen=false"
+      (action)="onNav($event)"
+    />
+  `
+})
+export class MappingFilesWidget {
+  store = inject(Store);
+
+  tipOpen = false;
+  tipData: TooltipData | null = null;
+  tipXY = { x: 0, y: 0 };
+
+  openTip(ev: MouseEvent, data?: TooltipData) {
+    if (!data) return;
+    const rect = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+    this.tipXY = { x: rect.left + rect.width + 8 + window.scrollX, y: rect.top + window.scrollY };
+    this.tipData = data;
+    this.tipOpen = true;
+  }
+
+  onNav(action: string) {
+    console.log('Mapping Files action:', action);
+  }
+}
+
+
