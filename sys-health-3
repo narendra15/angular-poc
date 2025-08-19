@@ -832,3 +832,238 @@ export class Store {
 }
 
 
+
+////////////--------- Enhancement 2 ----------------///////////////
+
+timeline-grid.component.ts
+
+import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { NgFor, NgIf, NgSwitch, NgSwitchCase, NgSwitchDefault } from '@angular/common';
+import { Cell, DayMeta, TooltipData } from '../models';
+import { StatusIndicatorComponent } from './status-indicator.component';
+import { TooltipCardComponent } from './tooltip-card.component';
+
+@Component({
+  standalone: true,
+  selector: 'app-timeline-grid',
+  imports: [NgFor, NgIf, NgSwitch, NgSwitchCase, NgSwitchDefault, StatusIndicatorComponent, TooltipCardComponent],
+  styles: [`
+    /* Container */
+    .wrap { overflow:auto; border:1px solid #e5e7eb; border-radius:8px; }
+
+    /* Each "row" (header + data rows) is its own grid */
+    .row {
+      display: grid;
+      align-items: center;
+
+      /* neutralize any legacy styles that may override sizing */
+      grid-auto-flow: initial !important;
+      grid-auto-columns: initial !important;
+    }
+
+    /* Sticky first column (header + data) — must be allowed to shrink to the track width */
+    .hdr-stick, .stick {
+      position: sticky;
+      left: 0;
+      z-index: 2;
+      background: #fff;
+      min-width: 0;      /* allow shrink */
+      max-width: 100%;
+      box-sizing: border-box;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      padding: 8px 12px;
+      border-right: 1px solid #f1f5f9;
+      font-weight: 600;
+    }
+
+    /* Header */
+    .hdr       { color:#475569; border-bottom:1px solid #eef2f7; }
+    .hdr-cell  { height: var(--hdr-h, 78px); display:grid; place-items:end center; padding-bottom:6px; border-left:1px solid #f8fafc; }
+    .rot       { transform-origin: bottom center; white-space:nowrap; font-size:12px; transform: rotate(var(--hdr-angle, -60deg)); }
+
+    /* Cells */
+    .cell      { display:grid; place-items:center; height:34px; border-left:1px solid #f8fafc; }
+    .monthly   { background:#f9fafb; border-left:1px solid #eef2f7; border-right:1px solid #eef2f7; }
+    .wknd      { background:#f8fafc; }
+  `],
+  template: `
+    <div class="wrap"
+         [style.--hdr-h.px]="headerRowHeight"
+         [style.--hdr-angle]="headerAngle">
+
+      <!-- HEADER -->
+      <div *ngIf="showHeader"
+           class="row hdr"
+           [style.gridTemplateColumns]="gridTemplate">
+        <div class="hdr-stick">{{ headerTitle }}</div>
+        <div *ngFor="let h of headers; let i=index"
+             class="hdr-cell"
+             [title]="fullHeaderTitles?.[i] || h">
+          <span class="rot" *ngIf="rotateHeaders; else plain">{{ h }}</span>
+          <ng-template #plain>{{ h }}</ng-template>
+        </div>
+      </div>
+
+      <!-- DATA ROWS -->
+      <div *ngFor="let r of rows"
+           class="row"
+           [style.gridTemplateColumns]="gridTemplate">
+        <div class="stick">{{ r.label }}</div>
+
+        <!-- Monthly: one big cell spanning all days -->
+        <ng-container *ngIf="isMonthly(r); else daily">
+          <div class="cell monthly"
+               [style.gridColumn]="gridSpanForMonthly"
+               (click)="openTip($event, r.cells[0])">
+            <ng-container [ngSwitch]="r.cells[0].kind">
+              <app-status-indicator *ngSwitchCase="'Success'" variant="green"></app-status-indicator>
+              <app-status-indicator *ngSwitchCase="'Warning'" variant="amber"></app-status-indicator>
+              <app-status-indicator *ngSwitchCase="'Error'"   variant="red"></app-status-indicator>
+              <app-status-indicator *ngSwitchCase="'NotReceived'" variant="ring"></app-status-indicator>
+              <app-status-indicator *ngSwitchCase="'NotGenerated'" variant="red"></app-status-indicator>
+              <span *ngSwitchDefault>-</span>
+            </ng-container>
+          </div>
+        </ng-container>
+
+        <!-- Daily cells -->
+        <ng-template #daily>
+          <div *ngFor="let c of r.cells; let i=index"
+               class="cell"
+               [class.wknd]="dayMeta[i]?.isWeekend && c.kind==='Blank'"
+               (click)="openTip($event, c)">
+            <ng-container [ngSwitch]="c.kind">
+              <app-status-indicator *ngSwitchCase="'Success'" variant="green"></app-status-indicator>
+              <app-status-indicator *ngSwitchCase="'Warning'" variant="amber"></app-status-indicator>
+              <app-status-indicator *ngSwitchCase="'Error'"   variant="red"></app-status-indicator>
+              <app-status-indicator *ngSwitchCase="'NotReceived'" variant="ring"></app-status-indicator>
+              <app-status-indicator *ngSwitchCase="'NotGenerated'" variant="red"></app-status-indicator>
+              <!-- Blank → nothing -->
+            </ng-container>
+          </div>
+        </ng-template>
+      </div>
+    </div>
+
+    <!-- Tooltip -->
+    <app-tooltip-card
+      [open]="tipOpen"
+      [data]="tipData"
+      [x]="tipXY.x"
+      [y]="tipXY.y"
+      (close)="tipOpen=false"
+      (action)="nav.emit($event)"
+    />
+  `
+})
+export class TimelineGridComponent {
+  /** header controls */
+  @Input() showHeader = true;
+  @Input() headerTitle = '';
+  @Input() headers: string[] = [];
+  @Input() fullHeaderTitles?: string[];
+  @Input() rotateHeaders = true;
+  @Input() headerAngle: string = '-60deg';
+  @Input() headerRowHeight = 78;
+
+  /** grid data */
+  @Input() dayMeta: DayMeta[] = [];
+  @Input() rows: Array<{ label: string; cells: (Cell & { colSpan?: number })[] }> = [];
+
+  /** widths */
+  @Input() fileColumnWidth = 150;   // px
+  @Input() dayColumnWidth  = 48;    // px
+
+  @Output() nav = new EventEmitter<string>();
+
+  tipOpen = false;
+  tipData: TooltipData | null = null;
+  tipXY = { x: 0, y: 0 };
+
+  /** exactly: "<file px> repeat(<days>, <day px>)" */
+  get gridTemplate(): string {
+    const days = this.headers?.length ?? 0;
+    return `${this.fileColumnWidth}px repeat(${days}, ${this.dayColumnWidth}px)`;
+  }
+
+  /** monthly cell spans all day columns (first grid track is the sticky file col) */
+  get gridSpanForMonthly(): string {
+    return `2 / span ${this.headers.length}`;
+  }
+
+  isMonthly(r: { cells: (Cell & { colSpan?: number })[] }) {
+    return r.cells.length === 1 && !!r.cells[0].colSpan && r.cells[0].colSpan! > 1;
+  }
+
+  openTip(ev: MouseEvent, cell?: Cell) {
+    if (!cell?.tooltip) return;
+    const rect = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+    this.tipXY = { x: rect.left + rect.width + 8 + window.scrollX, y: rect.top + window.scrollY };
+    this.tipData = cell.tooltip;
+    this.tipOpen = true;
+  }
+}
+
+
+
+/// CSS ///
+@Component({
+  // ...
+  styles: [`
+    /* Container */
+    .wrap { overflow:auto; border:1px solid #e5e7eb; border-radius:8px; }
+
+    /* Each row (header + data rows) is its own grid; sizing comes from [style.gridTemplateColumns] */
+    .row {
+      display: grid;
+      align-items: center;
+      /* hard reset any legacy grid auto rules */
+      grid-auto-flow: initial !important;
+      grid-auto-columns: initial !important;
+    }
+
+    /* First column cells (header and data) – NOT sticky anymore */
+    .hdr-stick, .stick {
+      /* no sticky, no left, no z-index */
+      position: static;
+      min-width: 0;          /* allow shrink within 150px track */
+      max-width: 100%;
+      box-sizing: border-box;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      padding: 8px 12px;
+      border-right: 1px solid #f1f5f9;
+      font-weight: 600;
+      background: transparent;
+    }
+
+    /* Header row */
+    .hdr       { color:#475569; border-bottom:1px solid #eef2f7; }
+    .hdr-cell  {
+      height: var(--hdr-h, 78px);
+      display: grid;
+      place-items: end center;
+      padding-bottom: 6px;
+      border-left: 1px solid #f8fafc;
+    }
+    .rot {
+      transform-origin: bottom center;
+      white-space: nowrap;
+      font-size: 12px;
+      transform: rotate(var(--hdr-angle, -60deg));
+    }
+
+    /* Day cells */
+    .cell    { display:grid; place-items:center; height:34px; border-left:1px solid #f8fafc; }
+    .monthly { background:#f9fafb; border-left:1px solid #eef2f7; border-right:1px solid #eef2f7; }
+    .wknd    { background:#f8fafc; }
+  `],
+  // ...
+})
+
+
+
+
