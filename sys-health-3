@@ -1071,24 +1071,28 @@ export class TimelineGridComponent {
 function buildDayMeta(year: number, month: number): DayMeta[] {
   const daysInMonth = new Date(year, month, 0).getDate(); // month is 1..12
   const today = new Date();
+
   const toIso = (y: number, m: number, d: number): IsoDate =>
     `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}` as IsoDate;
 
   const out: DayMeta[] = [];
   for (let day = 1; day <= daysInMonth; day++) {
-    const jsDate = new Date(year, month - 1, day); // local time
-    const dow = jsDate.getDay();                   // 0=Sun ... 6=Sat
+    // 👇 Force local date, do NOT feed an ISO string
+    const jsDate = new Date(year, month - 1, day);
+    const dow = jsDate.getDay(); // 0=Sun ... 6=Sat
+
     out.push({
       date: toIso(year, month, day),
       dow,
-      isWeekend: dow === 0 || dow === 6,           // Sun OR Sat
+      isWeekend: dow === 0 || dow === 6, // Sun OR Sat
       isFuture: jsDate > today,
       isPastOrToday: jsDate <= today,
-      hasAnyRecord: false                           // will set below
+      hasAnyRecord: false
     });
   }
   return out;
 }
+
 
 
 /////
@@ -1119,4 +1123,31 @@ timeline-grid.component.html
      (click)="openTip($event, c)">
   <!-- rest unchanged -->
 </div>
+
+
+///////////------------Enhancement 4--------------///////////////
+function buildDayMeta(year: number, month: number): DayMeta[] {
+  const daysInMonth = new Date(year, month, 0).getDate(); // month is 1..12
+  const today = new Date();
+
+  const toIso = (y: number, m: number, d: number): IsoDate =>
+    `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}` as IsoDate;
+
+  const out: DayMeta[] = [];
+  for (let day = 1; day <= daysInMonth; day++) {
+    // 👇 Force local date, do NOT feed an ISO string
+    const jsDate = new Date(year, month - 1, day);
+    const dow = jsDate.getDay(); // 0=Sun ... 6=Sat
+
+    out.push({
+      date: toIso(year, month, day),
+      dow,
+      isWeekend: dow === 0 || dow === 6, // Sun OR Sat
+      isFuture: jsDate > today,
+      isPastOrToday: jsDate <= today,
+      hasAnyRecord: false
+    });
+  }
+  return out;
+}
 
