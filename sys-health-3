@@ -1065,5 +1065,58 @@ export class TimelineGridComponent {
 })
 
 
+/////////////----------Enhancement 3------------/////////////////
 
+// Replace your buildDayMeta() with this version:
+function buildDayMeta(year: number, month: number): DayMeta[] {
+  const daysInMonth = new Date(year, month, 0).getDate(); // month is 1..12
+  const today = new Date();
+  const toIso = (y: number, m: number, d: number): IsoDate =>
+    `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}` as IsoDate;
+
+  const out: DayMeta[] = [];
+  for (let day = 1; day <= daysInMonth; day++) {
+    const jsDate = new Date(year, month - 1, day); // local time
+    const dow = jsDate.getDay();                   // 0=Sun ... 6=Sat
+    out.push({
+      date: toIso(year, month, day),
+      dow,
+      isWeekend: dow === 0 || dow === 6,           // Sun OR Sat
+      isFuture: jsDate > today,
+      isPastOrToday: jsDate <= today,
+      hasAnyRecord: false                           // will set below
+    });
+  }
+  return out;
+}
+
+
+/////
+
+load() {
+  const meta = buildDayMeta(this.year(), this.month());
+  this.dayMeta.set(meta);
+
+  const raw = dummyData as ShRaw[]; // your existing JSON array
+
+  // Mark which dates (across all data) have at least one record
+  const datesWithAnyRecord = new Set<string>(raw.map(r => r.sh_report_date));
+  for (const d of meta) d.hasAnyRecord = datesWithAnyRecord.has(d.date);
+
+  // Build rows per widget (unchanged)
+  this.sourceRows.set(buildGridRows(raw, meta, 'S'));
+  this.axiomRows.set(buildGridRows(raw, meta, 'A'));
+  this.mappingCols.set(buildMappingColumns(raw));
+}
+/////
+
+timeline-grid.component.html
+
+
+<div *ngFor="let c of r.cells; let i=index"
+     class="cell"
+     [class.wknd]="dayMeta[i]?.isWeekend && !dayMeta[i]?.hasAnyRecord && c.kind==='Blank'"
+     (click)="openTip($event, c)">
+  <!-- rest unchanged -->
+</div>
 
