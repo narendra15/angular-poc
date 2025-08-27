@@ -1,0 +1,36 @@
+.caption { margin: 4px 0 8px; color:#334155; font-size: 12px; }
+    .caption .help { color:#64748b; }
+    .pos-rel { position: relative; } /* anchor for absolute-positioned tooltip */
+
+    table.timeline { width:100%; border-collapse: collapse; table-layout: fixed; background:#fff; }
+    thead th { border-bottom: 1px solid #e5e7eb; background:#f8fafc; padding:6px 4px; text-align:center; font-weight:600; font-size:12px; }
+    tbody td { border-bottom: 1px solid #f1f5f9; padding: 6px 8px; }
+
+    .col-file { text-align:left; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .col-day  { text-align:center; cursor: default; }
+
+    .weekend  { background: #f5f7fb; }
+    .monthly  { background:#f9fafb; font-size:12px; color:#475569; }
+
+/* Outer container provides the single horizontal scrollbar */
+.wraper {
+    width: 100%;
+    overflow-x: auto;   /* scrollbar lives here */
+    overflow-y: hidden;
+  }
+  
+  /* Inner container makes widgets share the same horizontal width */
+  .widgets {
+    display: block;
+    min-width: 1800px;  /* adjust to how wide your tables need to be */
+  }
+  
+  /* Widgets stack vertically */
+  .widget {
+    display: block;
+    background-color: #fff;
+    padding: 20px;
+    margin: 10px 0;
+    border-radius: 5px;
+  }
+  

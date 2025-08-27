@@ -1,0 +1,79 @@
+<!-- src/app/new/components/timeline-grid/timeline-grid.component.html -->
+<div class="pos-rel csstransforms">
+  <table class="timeline table-header-rotated">
+    <!-- Header dates only when requested -->
+    <thead class="" *ngIf="showHeader">
+      <tr>
+        <th class="col-file" style="width:150px;">{{month}}</th>
+        <th *ngFor="let d of dates; let i = index"
+            class="col-day rotate"
+            [class.weekend]="isWeekend[i] && !colHasRecord[i]"
+            style="width:48px;">
+            <div>
+              <span class="rot">{{ headerLabel(i) }}</span>
+            </div>
+          
+        </th>
+      </tr>
+    </thead>
+    <thead *ngIf="!showHeader">
+      <tr>
+        <th class="col-file" style="width:150px;"></th>
+        <th *ngFor="let d of dates; let i = index"
+            class="col-day hdr"
+            [class.weekend]="isWeekend[i] && !colHasRecord[i]"
+            style="width:48px;">
+          
+        </th>
+      </tr>
+    </thead>
+
+    <tbody>
+      <tr *ngFor="let r of rows">
+        <td class="col-file">{{ r.label }}</td>
+
+        <!-- Monthly row -->
+        <td *ngIf="isMonthlyRow(r)"
+            class="col-day monthly center"
+            [attr.colspan]="dates.length"
+            (click)="openTooltip($event, r.cells[0].tooltip)">
+          <span [ngClass]="dotClass(r.cells[0].kind)"></span>
+        </td>
+
+        <!-- Daily row -->
+        <ng-container *ngIf="!isMonthlyRow(r)">
+          <td *ngFor="let c of r.cells; let i = index"
+              class="col-day center"
+              [class.weekend]="isWeekend[i] && !colHasRecord[i] && c.kind==='Blank'"
+              (click)="openTooltip($event, c.tooltip)">
+            <span [ngClass]="dotClass(c.kind)"></span>
+          </td>
+        </ng-container>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- Tooltip with title color + optional action button -->
+  <div *ngIf="tipOpen" class="tip" [style.left.px]="tipXY.x" [style.top.px]="tipXY.y">
+    <div class="tip-hdr">
+      <span class="title"
+            [ngClass]="{
+              'title-green': tipData?.color === 'G',
+              'title-amber': tipData?.color === 'A',
+              'title-red':   tipData?.color === 'R'
+            }">
+        {{ tipData?.title }}
+      </span>
+      <button class="close" (click)="closeTooltip()">×</button>
+    </div>
+    <div class="tip-body">
+      <div *ngFor="let line of tipData?.lines" class="line">{{ line }}</div>
+
+      <div *ngIf="tipData?.action" class="action">
+        <button class="link-btn" (click)="goTo(tipData?.action?.cmd)">
+          {{ tipData?.action?.label }}
+        </button>
+      </div>
+    </div>
+  </div>
+</div>

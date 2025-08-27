@@ -1,0 +1,9 @@
+<div *ngIf="open" class="tip" [style.left.px]="x" [style.top.px]="y">
+    <div class="hdr">
+      <span class="title">{{ data?.title }}</span>
+      <button class="close" (click)="close.emit()">×</button>
+    </div>
+    <div class="body">
+      <div *ngFor="let line of data?.lines" class="line">{{ line }}</div>
+    </div>
+  </div>

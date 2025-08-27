@@ -1,0 +1,41 @@
+<!-- src/app/new/components/mapping-files-table/mapping-files-table.component.html -->
+<div class="pos-rel">
+  <table class="mapping">
+    <thead>
+      <tr>
+        <th *ngFor="let c of columns">{{ c.label }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td *ngFor="let c of columns" class="center" (click)="openTooltip($event, c.tooltip)">
+          <span [ngClass]="dotClass(c.status)"></span>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- Tooltip with title color + optional action -->
+  <div *ngIf="tipOpen" class="tip" [style.left.px]="tipXY.x" [style.top.px]="tipXY.y">
+    <div class="tip-hdr">
+      <span class="title"
+            [ngClass]="{
+              'title-green': tipData?.color === 'G',
+              'title-amber': tipData?.color === 'A',
+              'title-red':   tipData?.color === 'R'
+            }">
+        {{ tipData?.title }}
+      </span>
+      <button class="close" (click)="closeTooltip()">×</button>
+    </div>
+    <div class="tip-body">
+      <div *ngFor="let line of tipData?.lines" class="line">{{ line }}</div>
+
+      <div *ngIf="tipData?.action" class="action">
+        <button class="link-btn" (click)="goTo(tipData?.action?.cmd)">
+          {{ tipData?.action?.label }}
+        </button>
+      </div>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,198 @@
+/* src/app/new/components/timeline-grid/timeline-grid.component.css */
+
+// .pos-rel {
+//         position: relative; /* anchor for absolute tooltip */
+// }
+  
+
+.table-header-rotated {
+    border-collapse: collapse;
+    td {
+      width: 30px;
+    }
+    .no-csstransforms & th {
+      padding: 5px 10px;
+    }
+    td {
+      text-align: center;
+      padding: 10px 5px;
+      border: 1px solid #ccc;
+    }
+    .csstransforms & th.rotate {
+      height: 58px;
+      white-space: nowrap;
+      // Firefox needs the extra DIV for some reason, otherwise the text disappears if you rotate 
+      > div {
+        transform: translate(34px, -9px) rotate(0deg);
+        width: 30px;
+      }
+      > div > span {
+        border-bottom: 1px solid #ccc;
+        padding: 5px 10px;
+        width: 50px;
+      }
+    }
+    th.row-header {
+      padding: 0 10px;
+      border-bottom: 1px solid #ccc;
+    }
+  }
+
+
+
+
+//   .timeline {
+//     width: 100%;
+//     border-collapse: collapse;
+//     table-layout: fixed;
+//     background: #fff;
+//   }
+  
+//   .timeline thead th {
+//     border-bottom: 1px solid #e5e7eb;
+//     background: #f8fafc;
+//     padding: 0;
+//     text-align: center;
+//   }
+  
+//   .timeline  tbody td {
+//     border-bottom: 1px solid #f1f5f9;
+//     padding: 6px 8px;
+//   }
+  
+//   .col-file {
+//     text-align: left;
+//     white-space: nowrap;
+//     overflow: hidden;
+//     text-overflow: ellipsis;
+//   }
+  
+//   .col-day {
+//     text-align: center;
+//   }
+  
+//   .center {
+//     text-align: center;
+//   }
+  
+//   .hdr {
+//     height: 78px;
+//     vertical-align: bottom;
+//   }
+  
+//   .rot {
+//     display: inline-block;
+//     transform: rotate(-60deg);
+//     transform-origin: bottom center;
+//     font-size: 12px;
+//     white-space: nowrap;
+//     margin-bottom: 6px;
+//   }
+  
+//   .weekend {
+//     background: #f5f7fb;
+//   }
+  
+//   .monthly {
+//     background: #f9fafb;
+//   }
+  
+//   /* indicators */
+//   .dot {
+//     width: 12px;
+//     height: 12px;
+//     display: inline-block;
+//     border-radius: 9999px;
+//   }
+//   .dot-green {
+//     background: #22c55e;
+//   }
+//   .dot-amber {
+//     background: #f59e0b;
+//   }
+//   .dot-red {
+//     background: #ef4444;
+//   }
+//   .ring-red {
+//     width: 12px;
+//     height: 12px;
+//     display: inline-block;
+//     border-radius: 9999px;
+//     border: 2px solid #ef4444;
+//   }
+  
+//   /* tooltip */
+//   .tip {
+//     position: absolute;
+//     background: #fff;
+//     border: 1px solid #e5e7eb;
+//     border-radius: 8px;
+//     box-shadow: 0 10px 24px rgba(0, 0, 0, 0.12);
+//     min-width: 220px;
+//     z-index: 1000;
+//   }
+//   .tip-hdr {
+//     display: flex;
+//     align-items: center;
+//     justify-content: space-between;
+//     padding: 8px 10px;
+//     border-bottom: 1px solid #f1f5f9;
+//     font-weight: 600;
+//   }
+//   .tip-body {
+//     padding: 8px 10px;
+//   }
+//   .line {
+//     font-size: 12px;
+//     color: #334155;
+//     padding: 2px 0;
+//   }
+//   button.close {
+//     border: none;
+//     background: transparent;
+//     font-size: 16px;
+//     line-height: 1;
+//     cursor: pointer;
+//   }
+  
+
+  
+table.timeline { width:100%; border-collapse: collapse; table-layout: fixed; background:#fff; }
+thead th { border-bottom:1px solid #e5e7eb; background:#f8fafc; padding:0; text-align:center; }
+tbody td { border-bottom:1px solid #f1f5f9; padding:6px 8px; }
+
+.col-file { text-align:left; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.col-day  { text-align:center; }
+.center   { text-align:center; }
+
+.hdr { height:78px; vertical-align:bottom; }
+.rot { display:inline-block; transform: rotate(-60deg); transform-origin: bottom center; font-size:12px; white-space:nowrap; margin-bottom:6px; }
+.weekend { background:#f5f7fb; }
+.monthly { background:#f9fafb; }
+
+/* indicators */
+.dot{ width:12px; height:12px; display:inline-block; border-radius:9999px; }
+.dot-green{ background:#22c55e; }
+.dot-amber{ background:#f59e0b; }
+.dot-red{ background:#ef4444; }
+.ring-red{ width:12px; height:12px; display:inline-block; border-radius:9999px; border:2px solid #ef4444; }
+
+/* tooltip */
+.tip { position:absolute; background:#fff; border:1px solid #e5e7eb; border-radius:8px; box-shadow:0 10px 24px rgba(0,0,0,.12); min-width:240px; z-index:1000; }
+.tip-hdr { display:flex; align-items:center; justify-content:space-between; padding:8px 10px; border-bottom:1px solid #f1f5f9; font-weight:600; }
+.tip-body{ padding:8px 10px; }
+.line{ font-size:12px; color:#334155; padding:2px 0; }
+button.close{ border:none; background:transparent; font-size:16px; line-height:1; cursor:pointer; }
+
+/* title colors from tooltip.color */
+.title-green{ color:#16a34a; }
+.title-amber{ color:#d97706; }
+.title-red{ color:#dc2626; }
+
+/* action link button */
+.action{ margin-top:8px; }
+.link-btn{
+  background:transparent; border:none; color:#2563eb; cursor:pointer;
+  padding:0; font-size:12px; text-decoration:underline;
+}
+.link-btn:hover{ color:#1d4ed8; }

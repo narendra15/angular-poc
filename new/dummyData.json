@@ -1,0 +1,133 @@
+[
+  {
+    "sh_report_date": "2025-06-01",
+    "sh_feed_load_date": "2025-06-01",
+    "sh_feed_ctgry": "A",
+    "sh_feed_type": "QRM",
+    "sh_active_rec_ind": "A",
+    "sh_load_status": "S",
+    "sh_load_message_header": "File Generated Successfully",
+    "sh_load_message_details": "",
+    "sh_load_message_color": "G",
+    "sh_source_record_cnt": 0,
+    "sh_target_record_cnt": 1200
+  },
+  {
+    "sh_report_date": "2025-06-02",
+    "sh_feed_load_date": "2025-06-02",
+    "sh_feed_ctgry": "A",
+    "sh_feed_type": "QRM",
+    "sh_active_rec_ind": "A",
+    "sh_load_status": "W",
+    "sh_load_message_header": "Generated with Warnings",
+    "sh_load_message_details": "Minor mismatches in two fields.",
+    "sh_load_message_color": "A",
+    "sh_source_record_cnt": 0,
+    "sh_target_record_cnt": 1188
+  },
+  {
+    "sh_report_date": "2025-06-03",
+    "sh_feed_load_date": "2025-06-03",
+    "sh_feed_ctgry": "A",
+    "sh_feed_type": "QRM",
+    "sh_active_rec_ind": "A",
+    "sh_load_status": "E",
+    "sh_load_message_header": "Generation Failed",
+    "sh_load_message_details": "Transform step error: Null in key column.",
+    "sh_load_message_color": "R",
+    "sh_source_record_cnt": 0,
+    "sh_target_record_cnt": 0
+  },
+
+  {
+    "sh_report_date": "2025-06-15",
+    "sh_feed_load_date": "2025-06-15",
+    "sh_feed_ctgry": "A",
+    "sh_feed_type": "QRM Monthly",
+    "sh_active_rec_ind": "A",
+    "sh_load_status": "S",
+    "sh_load_message_header": "Monthly File Generated",
+    "sh_load_message_details": "",
+    "sh_load_message_color": "G",
+    "sh_source_record_cnt": 0,
+    "sh_target_record_cnt": 36000
+  },
+
+  {
+    "sh_report_date": "2025-06-02",
+    "sh_feed_load_date": "2025-06-02",
+    "sh_feed_ctgry": "S",
+    "sh_feed_type": "APMS",
+    "sh_active_rec_ind": "A",
+    "sh_load_status": "W",
+    "sh_load_message_header": "Loaded with Warnings",
+    "sh_load_message_details": "5 rows had nullable amounts.",
+    "sh_load_message_color": "A",
+    "sh_source_record_cnt": 995,
+    "sh_target_record_cnt": 1000
+  },
+  {
+    "sh_report_date": "2025-06-03",
+    "sh_feed_load_date": "2025-06-03",
+    "sh_feed_ctgry": "S",
+    "sh_feed_type": "APMS",
+    "sh_active_rec_ind": "A",
+    "sh_load_status": "E",
+    "sh_load_message_header": "Load Failed",
+    "sh_load_message_details": "Source CSV missing required column.",
+    "sh_load_message_color": "R",
+    "sh_source_record_cnt": 500,
+    "sh_target_record_cnt": 0
+  },
+ 
+  {
+    "sh_report_date": "2025-06-20",
+    "sh_feed_load_date": "2025-06-20",
+    "sh_feed_ctgry": "S",
+    "sh_feed_type": "APMS Monthly",
+    "sh_active_rec_ind": "A",
+    "sh_load_status": "S",
+    "sh_load_message_header": "Monthly File Received",
+    "sh_load_message_details": "",
+    "sh_load_message_color": "G",
+    "sh_source_record_cnt": 0,
+    "sh_target_record_cnt": 30000
+  },
+
+  {
+    "sh_report_date": "2025-06-10",
+    "sh_feed_load_date": "2025-06-10",
+    "sh_feed_ctgry": "M",
+    "sh_feed_type": "QRM Mapping",
+    "sh_active_rec_ind": "A",
+    "sh_load_status": "S",
+    "sh_load_message_header": "Approved and Merged",
+    "sh_load_message_details": "",
+    "sh_load_message_color": "G",
+    "sh_target_record_cnt": 150
+  },
+  {
+    "sh_report_date": "2025-06-11",
+    "sh_feed_load_date": "2025-06-11",
+    "sh_feed_ctgry": "M",
+    "sh_feed_type": "APMS Mapping",
+    "sh_active_rec_ind": "A",
+    "sh_load_status": "W",
+    "sh_load_message_header": "Submitted with Warnings",
+    "sh_load_message_details": "2 codes deprecated; auto-mapped.",
+    "sh_load_message_color": "A",
+    "sh_target_record_cnt": 120
+  },
+  {
+    "sh_report_date": "2025-06-12",
+    "sh_feed_load_date": "2025-06-12",
+    "sh_feed_ctgry": "M",
+    "sh_feed_type": "Policy Mapping",
+    "sh_active_rec_ind": "A",
+    "sh_load_status": "E",
+    "sh_load_message_header": "Submitted with Errors",
+    "sh_load_message_details": "Lookup table version mismatch.",
+    "sh_load_message_color": "R",
+    "sh_target_record_cnt": 0
+  }
+]

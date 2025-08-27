@@ -1,0 +1,19 @@
+<div class="wraper">
+    <div class="widgets">
+      <div class="widget">
+        <!-- AXIOM -->
+        <app-timeline-grid [showHeader]="true" [dates]="dates" [rows]="axiomRows"></app-timeline-grid>
+      </div>
+  
+      <div class="widget">
+        <!-- Source Systems -->
+        <app-timeline-grid [showHeader]="false" [dates]="dates" [rows]="sourceRows"></app-timeline-grid>
+      </div>
+  
+      <div class="widget">
+        <!-- Mapping/Lookup -->
+        <app-mapping-files [columns]="mappingColumns"></app-mapping-files>
+      </div>
+    </div>
+  </div>
+  
