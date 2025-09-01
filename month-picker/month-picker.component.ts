@@ -1,4 +1,4 @@
-import { Component, Input, Output, EventEmitter, OnChanges, ViewChild, AfterViewInit } from '@angular/core';
+import { Component, Input, Output, EventEmitter, OnChanges, ViewChild, SimpleChanges, AfterViewInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -12,21 +12,17 @@ import { MatCalendar } from '@angular/material/datepicker';
 export const MONTH_YEAR_FORMATS = {
   parse:   { dateInput: { month: 'long', year: 'numeric' } as Intl.DateTimeFormatOptions },
   display: {
-    // What the <input matInput> shows
-    dateInput: { month: 'long', year: 'numeric' } as Intl.DateTimeFormatOptions,
-    // Header label above the months grid
+    dateInput: { month: 'long', year: 'numeric' } as Intl.DateTimeFormatOptions, // "August, 2025"
     monthYearLabel: { month: 'short', year: 'numeric' } as Intl.DateTimeFormatOptions,
     dateA11yLabel: { month: 'long', year: 'numeric' } as Intl.DateTimeFormatOptions,
     monthYearA11yLabel: { month: 'long', year: 'numeric' } as Intl.DateTimeFormatOptions,
   },
 };
 
-/** Force day=1 for display and render "August, 2025" */
 class MonthYearAdapter extends NativeDateAdapter {
   override format(date: Date, displayFormat: Intl.DateTimeFormatOptions): string {
     const d = new Date(date.getFullYear(), date.getMonth(), 1);
-    const month = d.toLocaleString(this.locale, { month: 'long' });
-    return `${month}, ${d.getFullYear()}`; // <-- "August, 2025"
+    return d.toLocaleDateString(this.locale, displayFormat); // "August, 2025"
   }
 }
 
@@ -51,60 +47,95 @@ class MonthYearAdapter extends NativeDateAdapter {
   styleUrl: './month-picker.component.scss'
 })
 export class MonthPickerComponent {
-  /** e.g., 6 => only last 6 months incl. current month are enabled */
+  /** e.g., 6 => only last 6 months incl current are enabled */
   @Input() monthsBack = 6;
 
-  /** Emits YYYY-MM-DD where DD is last day of selected month */
+  /** Optional default in 'YYYY-MM-DD' format; we use its month/year. */
+  @Input() defaultDateYMD?: string;
+
+  /** Emits 'YYYY-MM-DD' where DD = last day of selected month */
   @Output() valueChange = new EventEmitter<string | null>();
 
+  @ViewChild('picker') picker!: MatDatepicker<Date>;
+
   control = new FormControl<Date | null>(null);
+  minDate!: Date;   // first day of earliest allowed month
+  maxDate!: Date;   // last day of current month
+  startAt!: Date;   // where the popup focuses (default month)
 
-  minDate!: Date; // first day of the earliest allowed month
-  maxDate!: Date; // last day of the current month
-  @ViewChild('picker', { static: true }) picker!: MatDatepicker<Date>;
-  constructor() { this.computeBounds(); }
-
-  ngOnChanges(): void {
+  ngOnInit(): void {
     this.computeBounds();
-    const v = this.control.value;
-    if (v && (v < this.minDate || v > this.maxDate)) {
-      this.control.setValue(null);
-      this.valueChange.emit(null);
+    this.applyDefault();
+  }
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['monthsBack']) {
+      this.computeBounds();
+    }
+    if (changes['defaultDateYMD'] || changes['monthsBack']) {
+      this.applyDefault(false); // don't emit twice unless value changed
     }
   }
 
   onOpened() {
-    // After the panel is rendered, force the YEARS grid (multi-year)
+    // ensure it always opens on the YEARS grid
     queueMicrotask(() => {
       const cal = (this.picker as any)?._popupRef?.instance?._calendar as MatCalendar<Date> | undefined;
       if (cal) cal.currentView = 'multi-year';
     });
   }
-  
+
   onMonthSelected(month: Date, picker: MatDatepicker<Date>) {
     const eom = new Date(month.getFullYear(), month.getMonth() + 1, 0);
     if (eom < this.minDate || eom > this.maxDate) return;
-  
+
     this.control.setValue(eom);
-    this.valueChange.emit(
-      `${eom.getFullYear()}-${String(eom.getMonth() + 1).padStart(2, '0')}-${String(eom.getDate()).padStart(2, '0')}`
-    );
-  
-    // Close immediately so the day grid never appears
-    picker.close();
+    this.valueChange.emit(this.toYYYYMMDD(eom));
+    picker.close(); // never show days
   }
 
+  // ---- helpers ----
   private computeBounds(): void {
     const today = new Date();
     const n = Math.max(1, this.monthsBack);
     this.minDate = new Date(today.getFullYear(), today.getMonth() - (n - 1), 1);
     this.maxDate = new Date(today.getFullYear(), today.getMonth() + 1, 0);
   }
-}
 
-function thisfmt(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`; // YYYY-MM-DD
+  private applyDefault(emit = true): void {
+    const parsed = this.parseYMD(this.defaultDateYMD);
+    const base = parsed ?? new Date(); // if invalid/missing, use today
+    const eom = new Date(base.getFullYear(), base.getMonth() + 1, 0);
+
+    // clamp within window
+    let final = eom;
+    if (final < this.minDate) final = this.minDate;
+    if (final > this.maxDate) final = this.maxDate;
+
+    // update control/startAt
+    const prev = this.control.value?.getTime();
+    this.control.setValue(final);
+    this.startAt = final;
+
+    if (emit && prev !== final.getTime()) {
+      this.valueChange.emit(this.toYYYYMMDD(final));
+    }
+  }
+
+  private parseYMD(ymd?: string): Date | null {
+    if (!ymd) return null;
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
+    if (!m) return null;
+    const y = +m[1], monIdx = +m[2] - 1;
+    if (monIdx < 0 || monIdx > 11) return null;
+    // Use day=1; we only care about month/year
+    return new Date(y, monIdx, 1);
+  }
+
+  private toYYYYMMDD(d: Date): string {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
 }

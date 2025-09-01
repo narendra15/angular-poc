@@ -13,10 +13,12 @@
 
   <mat-datepicker-toggle matSuffix [for]="picker"></mat-datepicker-toggle>
 
+  <!-- open on YEARS; click year -> months; click month -> close (no day view) -->
   <mat-datepicker
-  #picker
-  startView="multi-year"
-  [startAt]="maxDate"
-  (opened)="onOpened()"
-  (monthSelected)="onMonthSelected($event, picker)">
-</mat-datepicker>
+    #picker
+    startView="multi-year"
+    [startAt]="startAt"
+    (opened)="onOpened()"
+    (monthSelected)="onMonthSelected($event, picker)">
+  </mat-datepicker>
+</mat-form-field>
