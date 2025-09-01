@@ -1,0 +1,22 @@
+<mat-form-field appearance="outline" style="width: 320px">
+  <mat-label>Month</mat-label>
+
+  <input
+    matInput
+    [matDatepicker]="picker"
+    [formControl]="control"
+    [min]="minDate"
+    [max]="maxDate"
+    readonly
+    (keydown)="$event.preventDefault()"
+  />
+
+  <mat-datepicker-toggle matSuffix [for]="picker"></mat-datepicker-toggle>
+
+  <mat-datepicker
+  #picker
+  startView="multi-year"
+  [startAt]="maxDate"
+  (opened)="onOpened()"
+  (monthSelected)="onMonthSelected($event, picker)">
+</mat-datepicker>
