@@ -1,0 +1,86 @@
+<div class="container">
+    <!-- LEFT: Input Tables -->
+    <section class="left">
+      <header class="left-header">
+        <h2>Input Tables</h2>
+  
+        <!-- Year dropdown (visible for both, but disabled if read-only) -->
+        <label class="year-select">
+          <span>Select Year</span>
+          <select [value]="svc.currentYear()" 
+                  (change)="onYearChange($any($event.target).value)" 
+                  [disabled]="false">
+            <option *ngFor="let y of yearsToShow" [value]="y">{{ y }}</option>
+          </select>
+        </label>
+      </header>
+  
+      <!-- Month cards -->
+      <ng-container *ngIf="svc.monthsForCurrentYear().length; else noData">
+        <div class="months-grid">
+          <div class="month-card"
+               *ngFor="let m of svc.monthsForCurrentYear()"
+               [class.changed]="!readonlyMode && m.changed">
+  
+            <div class="month-title">{{ svc.monthLabel(m.month) }} {{ m.year }}</div>
+  
+            <!-- Toggle is disabled if readonly -->
+            <label class="toggle">
+              <input type="checkbox" 
+                     [checked]="m.checked" 
+                     (change)="toggle(m.month)" 
+                     [disabled]="readonlyMode" />
+              <span class="status-chip" [class.on]="m.checked" [class.off]="!m.checked">
+                {{ svc.statusCode(m.checked) }}
+              </span>
+            </label>
+  
+            <div class="status-text">{{ svc.statusText(m.checked) }}</div>
+          </div>
+        </div>
+      </ng-container>
+  
+      <ng-template #noData>
+        <div class="no-data">No data available for {{ svc.currentYear() }}.</div>
+      </ng-template>
+    </section>
+  
+    <!-- RIGHT: Pending Changes (only for Reviewer) -->
+    <section class="right" *ngIf="!readonlyMode">
+      <header class="right-header">
+        <h2>Pending Changes</h2>
+        <div class="actions">
+          <button class="btn secondary" type="button" 
+                  (click)="clearAll()" 
+                  [disabled]="svc.pendingDeltas().length === 0">Clear All</button>
+          <button class="btn primary" type="button" 
+                  (click)="apply()" 
+                  [disabled]="svc.pendingDeltas().length === 0">Apply Changes</button>
+        </div>
+      </header>
+  
+      <div *ngIf="svc.pendingDeltas().length === 0" class="empty">
+        No pending changes.
+      </div>
+  
+      <div class="pending-list" *ngIf="svc.pendingDeltas().length > 0">
+        <div class="year-group" *ngFor="let group of (svc.pendingByYear() | keyvalue: yearDesc)">
+          <div class="year-title">{{ group.key }}</div>
+          <ul>
+            <li *ngFor="let row of group.value">
+              <span class="m">{{ svc.monthLabel(row.month) }}</span>
+              <span class="arrow">→</span>
+              <span class="code">{{ row.to ? 'Y' : 'N' }}</span>
+              <span class="text">({{ svc.statusText(row.to) }})</span>
+            </li>
+          </ul>
+        </div>
+      </div>
+  
+      <div class="footer-note">
+        Note: Changes aren’t saved until you click <b>Apply Changes</b>. 
+        Refreshing or navigating away will reset to baseline.
+      </div>
+    </section>
+  </div>
+  
