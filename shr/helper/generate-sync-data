@@ -46,3 +46,4 @@ function buildArray(
     (a, b) => a.year - b.year || a.month.localeCompare(b.month)
   );
 }
+
