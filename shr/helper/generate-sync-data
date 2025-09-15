@@ -1,49 +1,37 @@
-type Result = { year: number; month: string; isIncluded: "Y" | "N"; ts: string | null };
+type Result = {
+  year: number;
+  month: string;
+  isIncluded: "Y" | "N";
+  ts: string | null;
+};
 
-/**
- * Accepts arrays where each item is either:
- *  - "YYYY-MM-DD | YYYY-MM-DDTHH:mm:ss"   (string with pipe)
- *  - "YYYY-MM-DD"                          (date only)
- *  - { date: "YYYY-MM-DD", ts?: "YYYY-MM-DDTHH:mm:ss" } (object)
- */
 function buildArray(
-  current: Array<string | { date: string; ts?: string }>,
-  archive: Array<string | { date: string; ts?: string }>
+  current: string[],
+  archive: string[]
 ): Result[] {
-  const out = new Map<string, Result>(); // key: "YYYY-MM"
+  const results: Result[] = [];
+  const currentSet = new Set(current.map(d => d.split("|")[0].trim().split("T")[0]));
 
-  // helper to pull {date, ts} out of either shape (inlined, minimal)
-  const get = (item: string | { date: string; ts?: string }) => {
-    if (typeof item === "string") {
-      const [left, right] = item.split("|").map(s => s?.trim());
-      return { date: left.split("T")[0], ts: right ?? null };
-    }
-    return { date: item.date.split("T")[0], ts: item.ts ?? null };
+  const parse = (entry: string): { date: string; ts: string | null } => {
+    const [datePart, tsPart] = entry.split("|").map(s => s.trim());
+    return { date: datePart.split("T")[0], ts: tsPart ?? null };
   };
 
-  // 1) current -> mark Y
-  for (const it of current) {
-    const { date, ts } = get(it);
-    const [y, m] = date.split("-");
-    const key = `${y}-${m}`;
-    if (!out.has(key)) {
-      out.set(key, { year: +y, month: m, isIncluded: "Y", ts });
+  // 1) Add all from current → Y
+  for (const item of current) {
+    const { date, ts } = parse(item);
+    const [year, month] = date.split("-");
+    results.push({ year: +year, month, isIncluded: "Y", ts });
+  }
+
+  // 2) Add archive ones not in current → N
+  for (const item of archive) {
+    const { date, ts } = parse(item);
+    const [year, month] = date.split("-");
+    if (!currentSet.has(date)) {
+      results.push({ year: +year, month, isIncluded: "N", ts });
     }
   }
 
-  // 2) archive -> add only if month not already present
-  for (const it of archive) {
-    const { date, ts } = get(it);
-    const [y, m] = date.split("-");
-    const key = `${y}-${m}`;
-    if (!out.has(key)) {
-      out.set(key, { year: +y, month: m, isIncluded: "N", ts });
-    }
-  }
-
-  // sorted by YYYY-MM
-  return Array.from(out.values()).sort(
-    (a, b) => a.year - b.year || a.month.localeCompare(b.month)
-  );
+  return results;
 }
-
