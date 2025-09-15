@@ -1,0 +1,106 @@
+type Result = {
+  year: number;
+  month: string;                 // "01".."12"
+  isIncluded: "Y" | "N";         // Y if present in current_table
+  ts: string | null;             // full datetime after the pipe, e.g. "2025-02-01T10:20:20"
+};
+
+type Pair = { base: string; ts: string | null }; // base = "YYYY-MM-DD"
+
+/**
+ * Parse a bracketed list into pairs of { base, ts }.
+ * Supports:
+ *   "[2025-01-31 | 2025-02-01T10:20:20, 2025-02-28 | 2025-02-01T10:22:20]"
+ * and the older style:
+ *   "[2025-01-31|2025-02-01T10:20:20|2025-02-28|2025-02-01T10:22:20]"
+ */
+function parsePairs(raw: string): Pair[] {
+  const inside = raw.trim().replace(/^\[/, "").replace(/\]$/, "");
+  if (!inside) return [];
+
+  // Prefer comma-separated items if present
+  if (inside.includes(",")) {
+    return inside.split(",").map(chunk => {
+      const [left, right] = chunk.split("|").map(s => s?.trim());
+      const base = (left ?? "").split("T")[0];
+      const ts = right ? right : null;
+      return { base, ts };
+    });
+  }
+
+  // Fallback: tokens separated only by '|', assume [base|ts|base|ts|...]
+  const tokens = inside.split("|").map(t => t.trim()).filter(Boolean);
+  const out: Pair[] = [];
+  for (let i = 0; i < tokens.length; i += 2) {
+    const base = (tokens[i] ?? "").split("T")[0];
+    const ts = tokens[i + 1] ? tokens[i + 1] : null;
+    if (base) out.push({ base, ts });
+  }
+  return out;
+}
+
+function toKey(baseDate: string) {
+  // key by year-month (YYYY-MM)
+  return baseDate.slice(0, 7);
+}
+
+function isNewer(a: string | null, b: string | null) {
+  // returns true if a is newer than b
+  if (!a && !b) return false;
+  if (a && !b) return true;
+  if (!a && b) return false;
+  // both present: lexical compare works for ISO 8601
+  return (a as string) > (b as string);
+}
+
+function buildArray(current_table: string, archive_table: string): Result[] {
+  const currentPairs = parsePairs(current_table);
+  const archivePairs = parsePairs(archive_table);
+
+  // Map of YYYY-MM -> { isIncluded, ts }
+  const byMonth = new Map<string, { isIncluded: "Y" | "N"; ts: string | null }>();
+
+  // 1) Current -> always Y; keep the latest ts per month
+  for (const { base, ts } of currentPairs) {
+    const key = toKey(base);
+    const prev = byMonth.get(key);
+    if (!prev) {
+      byMonth.set(key, { isIncluded: "Y", ts });
+    } else {
+      // Prefer Y and the latest ts
+      const nextIncluded: "Y" | "N" = "Y";
+      const nextTs = isNewer(ts, prev.ts) ? ts : prev.ts;
+      byMonth.set(key, { isIncluded: nextIncluded, ts: nextTs ?? null });
+    }
+  }
+
+  // 2) Archive -> only add if month not already in current; keep latest ts per month
+  for (const { base, ts } of archivePairs) {
+    const key = toKey(base);
+    const prev = byMonth.get(key);
+    if (!prev) {
+      byMonth.set(key, { isIncluded: "N", ts });
+    } else if (prev.isIncluded === "N") {
+      // If it’s already N, keep the latest ts
+      const nextTs = isNewer(ts, prev.ts) ? ts : prev.ts;
+      byMonth.set(key, { isIncluded: "N", ts: nextTs ?? null });
+    }
+    // If prev is Y, ignore (current wins).
+  }
+
+  // Build sorted array (ascending by YYYY-MM)
+  const sortedKeys = Array.from(byMonth.keys()).sort();
+  const result: Result[] = sortedKeys.map(k => {
+    const [yearStr, month] = k.split("-");
+    const { isIncluded, ts } = byMonth.get(k)!;
+    return { year: Number(yearStr), month, isIncluded, ts: ts ?? null };
+  });
+
+  return result;
+}
+
+// --- Example ---
+const current_table = "[2025-01-31 | 2025-02-01T10:20:20, 2025-02-28 | 2025-02-01T10:22:20]";
+const archive_table = "[2024-12-31 | 2024-12-31T09:10:00, 2024-11-30 | 2024-11-30T08:00:00, 2025-02-01 | 2025-02-01T10:21:20]";
+
+console.log(buildArray(current_table, archive_table));
