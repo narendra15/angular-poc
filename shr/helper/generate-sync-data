@@ -35,3 +35,9 @@ function buildArray(
 
   return results;
 }
+
+
+.replace(/[‘’']/g, "")   // remove fancy/single quotes
+  .replace(/^\[|\]$/g, "") // remove [ and ]
+  .split(",")              // split by comma
+  .map(s => s.trim());     // trim spaces
