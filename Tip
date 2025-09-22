@@ -1,0 +1,89 @@
+// add these fields near your existing tipOpen/tipData/tipXY
+private activeCell: { row: number; col: number } | null = null;   // which cell is “in focus”
+
+/** Return true when a cell should be blurred (tooltip open on a different cell). */
+isBlur(row: number, col: number): boolean {
+  return this.tipOpen && (!!this.activeCell &&
+          !(this.activeCell.row === row && this.activeCell.col === col));
+}
+
+/**
+ * Open tooltip beside the clicked cell, if it has tooltip data.
+ * dayIndex is 0-based; when >= 24 (days 25..31) we place tooltip to the LEFT.
+ */
+openTooltip(ev: MouseEvent, data?: CellTooltip, rowIndex?: number, colIndex?: number, dayIndex?: number) {
+  if (!data) return;
+
+  // remember the active cell so we can blur others
+  this.activeCell = (rowIndex != null && colIndex != null) ? { row: rowIndex, col: colIndex } : null;
+
+  const rect = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+  const margin = 8;
+
+  // default: show tooltip to the RIGHT of the cell
+  let x = rect.left + rect.width + window.scrollX + margin;
+
+  // for late month (25th+), show on LEFT to avoid going off-screen
+  if (typeof dayIndex === 'number' && dayIndex >= 24) {
+    const estimatedWidth = 280; // tweak if your tooltip is wider/narrower
+    x = Math.max(window.scrollX + margin, rect.left + window.scrollX - estimatedWidth - margin);
+  }
+
+  this.tipXY = { x, y: rect.top + window.scrollY };
+  this.tipData = data;
+  this.tipOpen = true;
+}
+
+/** Close tooltip and clear active / blur. */
+closeTooltip() {
+  this.tipOpen = false;
+  this.tipData = null;
+  this.activeCell = null;
+}
+
+/** Optional: CSS class for the colored dot; unchanged from your code */
+dotClass(kind: CellKind): string {
+  // …your existing mapping…
+  return '';
+}
+
+
+
+
+
+<tbody>
+  <tr *ngFor="let r of rows; let rowIndex = index">
+    <td class="col-file">{{ r.label }}</td>
+
+    <!-- Monthly row (single big cell) -->
+    <td *ngIf="isMonthlyRow(r)"
+        class="col-day monthly center"
+        [ngClass]="{ blur: isBlur(rowIndex, 0) }"
+        [attr.colspan]="dates.length"
+        (click)="openTooltip($event, r.cells[0].tooltip, rowIndex, 0, dates.length - 1)">
+      <span [ngClass]="dotClass(r.cells[0].kind)"></span>
+    </td>
+
+    <!-- Daily row (one cell per day) -->
+    <ng-container *ngIf="!isMonthlyRow(r)">
+      <td *ngFor="let c of r.cells; let i = index"
+          class="col-day center"
+          [ngClass]="{ blur: isBlur(rowIndex, i) }"
+          (click)="openTooltip($event, c.tooltip, rowIndex, i, i)">
+        <span [ngClass]="dotClass(c.kind)"></span>
+      </td>
+    </ng-container>
+  </tr>
+</tbody>
+
+<!-- your tooltip block stays the same, just make sure it calls closeTooltip() -->
+
+
+
+
+/* blur every non-active cell while a tooltip is open */
+td.blur {
+  opacity: 0.35;
+  filter: blur(2px);
+  transition: filter 120ms ease, opacity 120ms ease;
+}
