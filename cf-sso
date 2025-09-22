@@ -1,21 +1,20 @@
-export function formatUserAppsObj(codes: any[]): UserAppsRolesObj {
+export function formatUserAppsObj(codes: string[]): UserAppsRolesObj {
   const userApps: UserAppsMap = {};
 
   codes.forEach((code) => {
-    // Expect: "APPNAME | ROLE | URL" but ignore URL here
-    const parts = String(code).split('|').map(p => p.trim());
-    if (parts.length < 2) return;
+    const parts = code.split('|');
 
-    const [appRaw, roleRaw] = parts;
+    if (parts.length < 2) return; // skip LOGIN or bad values
+
+    const appRaw = parts[0];
+    const roleRaw = parts[1];
+
     if (!appRaw || !roleRaw) return;
 
-    const app = appRaw.toLowerCase();
+    const app  = appRaw.toLowerCase();
     const role = roleRaw.toUpperCase();
 
-    if (!userApps[app]) {
-      userApps[app] = { roles: [] };
-    }
-
+    if (!userApps[app]) userApps[app] = { roles: [] };
     if (!userApps[app].roles.includes(role)) {
       userApps[app].roles.push(role);
     }
@@ -46,4 +45,19 @@ export function buildAppRoleCodes(codes: string[]): string[] {
   });
 
   return result;
+}
+
+
+
+
+export function buildAppRoleCodes(codes: string[]): string[] {
+  return codes
+    .map((code) => {
+      const parts = code.split('|');
+      if (parts.length < 2) return null; // skip LOGIN
+
+      const [appRaw, roleRaw] = parts;
+      return `${appRaw.replace(/-/g, '_')}-${roleRaw.toUpperCase()}`;
+    })
+    .filter((x): x is string => x !== null);
 }
