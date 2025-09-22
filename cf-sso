@@ -32,3 +32,27 @@ export function formatUserAppsObj(codes: any[]): UserAppsRolesObj {
 
   return { user_apps: userApps };
 }
+
+
+
+
+export function buildAppRoleCodes(codes: string[]): string[] {
+  const result: string[] = [];
+
+  codes.forEach(code => {
+    // Expect format: "APPNAME | ROLE | URL"
+    const parts = String(code).split('|').map(p => p.trim());
+    if (parts.length < 3) return; // guard against bad values
+
+    const [appRaw, roleRaw] = parts;
+    if (!appRaw || !roleRaw) return;
+
+    // Replace '-' with '_' in app name, preserve rest
+    const app = appRaw.replace(/-/g, '_');
+    const role = roleRaw.toUpperCase();
+
+    result.push(`${app}-${role}`);
+  });
+
+  return result;
+}
