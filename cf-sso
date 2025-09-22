@@ -1,0 +1,38 @@
+export function formatUserAppsObj(codes: any[]): UserAppsRolesObj {
+  const userApps: UserAppsMap = {};
+
+  codes.forEach((code) => {
+    // expected: "SHR-3421 | P | http://someurl.com"
+    const parts = String(code).split('|').map(p => p.trim());
+    if (parts.length < 3) return; // skip bad values
+
+    const [appRaw, roleRaw, urlRaw] = parts;
+    if (!appRaw || !roleRaw || !urlRaw) return;
+
+    const app = appRaw.toLowerCase();          // key
+    const role = roleRaw.toUpperCase();        // normalize roles
+    const url  = urlRaw;                        // keep as given
+
+    // create bucket or validate URL if bucket exists
+    if (!userApps[app]) {
+      userApps[app] = { roles: [], url };
+    } else {
+      const existingUrl = userApps[app].url;
+      if (existingUrl && existingUrl !== url) {
+        throw new Error(
+          `URL mismatch for app "${app}": "${existingUrl}" vs "${url}".`
+        );
+      }
+    }
+
+    // ensure url set (in case first entry skipped earlier)
+    if (!userApps[app].url) userApps[app].url = url;
+
+    // de-duplicate roles
+    if (!userApps[app].roles.includes(role)) {
+      userApps[app].roles.push(role);
+    }
+  });
+
+  return { user_apps: userApps };
+}
