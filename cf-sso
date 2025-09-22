@@ -2,28 +2,19 @@ export function formatUserAppsObj(codes: any[]): UserAppsRolesObj {
   const userApps: UserAppsMap = {};
 
   codes.forEach((code) => {
+    // Expect: "APPNAME | ROLE | URL" but ignore URL here
     const parts = String(code).split('|').map(p => p.trim());
-    if (parts.length < 3) return;
+    if (parts.length < 2) return;
 
-    const [appRaw, roleRaw, urlRaw] = parts;
-    if (!appRaw || !roleRaw || !urlRaw) return;
+    const [appRaw, roleRaw] = parts;
+    if (!appRaw || !roleRaw) return;
 
     const app = appRaw.toLowerCase();
     const role = roleRaw.toUpperCase();
-    const url  = urlRaw;
 
     if (!userApps[app]) {
-      userApps[app] = { roles: [], url };
-    } else {
-      const existingUrl = userApps[app].url;
-      if (existingUrl && existingUrl !== url) {
-        throw new Error(
-          `URL mismatch for app "${app}": "${existingUrl}" vs "${url}".`
-        );
-      }
+      userApps[app] = { roles: [] };
     }
-
-    if (!userApps[app].url) userApps[app].url = url;
 
     if (!userApps[app].roles.includes(role)) {
       userApps[app].roles.push(role);
