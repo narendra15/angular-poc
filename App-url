@@ -1,0 +1,25 @@
+export function buildAppUrls(codes: string[]): Record<string, string> {
+  const appUrls: Record<string, string> = {};
+
+  codes.forEach((code) => {
+    if (!code) return;
+
+    if (code.includes('|')) {
+      // New format: APP|ROLE|URL
+      const parts = code.split('|').map(p => p.trim());
+      if (parts.length >= 3) {
+        const app = parts[0].toLowerCase();   // consistent key
+        const url = parts[2];
+
+        // keep first seen or enforce consistency
+        if (app in appUrls && appUrls[app] !== url) {
+          console.warn(`URL mismatch for ${app}:`, appUrls[app], 'vs', url);
+        }
+        appUrls[app] = url;
+      }
+    }
+    // Old format "APP-ROLE" or keywords like LOGIN → skip
+  });
+
+  return appUrls;
+}
