@@ -60,3 +60,45 @@ export function pickLatestByReportDate(
 
   return result;
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+export function pickLatestByReportDate(rows: SystemHealthRec[]): SystemHealthRec[] {
+  const byDate: Record<string, SystemHealthRec> = {};
+
+  for (const rec of rows) {
+    const key = rec.sh_report_date?.trim();
+    if (!key) continue;
+
+    const candidateTime = Date.parse(rec.last_updated_ts ?? "");
+    const hasCandidateTime = !Number.isNaN(candidateTime);
+
+    if (!byDate[key]) {
+      // first record → keep it
+      byDate[key] = rec;
+    } else {
+      const existing = byDate[key];
+      const existingTime = Date.parse(existing.last_updated_ts ?? "");
+      const hasExistingTime = !Number.isNaN(existingTime);
+
+      if (
+        hasCandidateTime &&
+        (!hasExistingTime || candidateTime > existingTime)
+      ) {
+        byDate[key] = rec;
+      }
+    }
+  }
+
+  return Object.values(byDate);
