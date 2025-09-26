@@ -1,0 +1,62 @@
+// Types you can tweak to your real API
+export interface SystemHealthRec {
+  sh_uid: string;
+  sh_report_date: string;      // e.g. "2025-07-31"
+  last_updated_ts?: string;    // e.g. "2025-09-26T17:53:08.083Z"
+  // ...anything else from the API
+}
+
+export interface ApiResponse {
+  statusCode: number;
+  success: boolean;
+  message: string;
+  data: SystemHealthRec[];
+}
+
+/**
+ * Pick the latest (by last_updated_ts) record per sh_report_date.
+ * - Ignores items with missing/invalid last_updated_ts unless it's the only one for that date.
+ * - Returns an array, optionally sorted by sh_report_date (desc by default).
+ */
+export function pickLatestByReportDate(
+  rows: SystemHealthRec[],
+  sortDesc: boolean = true
+): SystemHealthRec[] {
+  const byDate: Record<string, SystemHealthRec> = {};
+
+  for (const rec of rows) {
+    const key = rec.sh_report_date?.trim();
+    if (!key) continue;
+
+    const candidateTime = Date.parse(rec.last_updated_ts ?? "");
+    const hasCandidateTime = !Number.isNaN(candidateTime);
+
+    const existing = byDate[key];
+    if (!existing) {
+      // first record for the date — store it even if timestamp is missing
+      byDate[key] = rec;
+      continue;
+    }
+
+    const existingTime = Date.parse(existing.last_updated_ts ?? "");
+    const hasExistingTime = !Number.isNaN(existingTime);
+
+    // Choose the one with a valid and greater timestamp.
+    // If only one has a valid timestamp, prefer that one.
+    // If both invalid, keep the existing (first seen).
+    if (hasCandidateTime && (!hasExistingTime || candidateTime > existingTime)) {
+      byDate[key] = rec;
+    }
+  }
+
+  const result = Object.values(byDate);
+
+  // optional sort: newest report date first
+  result.sort((a, b) =>
+    sortDesc
+      ? a.sh_report_date < b.sh_report_date ? 1 : a.sh_report_date > b.sh_report_date ? -1 : 0
+      : a.sh_report_date > b.sh_report_date ? 1 : a.sh_report_date < b.sh_report_date ? -1 : 0
+  );
+
+  return result;
+}
