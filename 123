@@ -1,0 +1,60 @@
+type RoleEntry = { roles: string[] };
+type UserAppsMap = Record<string, RoleEntry>;
+interface UserAppsRolesObj { user_apps: UserAppsMap; }
+
+export function formatUserAppsObj(codes: string[]): UserAppsRolesObj {
+  const userApps: UserAppsMap = {};
+
+  codes.forEach((code) => {
+    if (!code) return;
+
+    let app = '';
+    let role = '';
+
+    if (code.includes('|')) {
+      // New format: APP | ROLE | [URL]
+      const parts = code.split('|').map(p => p.trim());
+      if (parts.length >= 2) {
+        app = parts[0];
+        role = parts[1];
+      }
+    } else if (code.includes('-')) {
+      // Old format: APP-ROLE
+      const parts = code.split('-').map(p => p.trim());
+      if (parts.length >= 2) {
+        role = parts.pop()!;        // last part is role
+        app = parts.join('-');      // rest is app
+      }
+    } else {
+      // keyword like LOGIN → skip
+      return;
+    }
+
+    if (!app || !role) return;
+
+    // normalize: replace dashes with underscores
+    const appKey = app.replace(/-/g, '_').toLowerCase();
+    const roleKey = role.toUpperCase();
+
+    if (!userApps[appKey]) {
+      userApps[appKey] = { roles: [] };
+    }
+
+    if (!userApps[appKey].roles.includes(roleKey)) {
+      userApps[appKey].roles.push(roleKey);
+    }
+
+    // Always sort roles: P first, then fixed order R → A
+    const roleOrder = ['P', 'R', 'A'];
+    userApps[appKey].roles.sort((a, b) => {
+      const ai = roleOrder.indexOf(a);
+      const bi = roleOrder.indexOf(b);
+      if (ai !== -1 && bi !== -1) return ai - bi;   // both known
+      if (ai !== -1) return -1;                     // a is known
+      if (bi !== -1) return 1;                      // b is known
+      return a.localeCompare(b);                    // fallback alphabetical
+    });
+  });
+
+  return { user_apps: userApps };
+}
