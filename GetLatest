@@ -102,3 +102,74 @@ export function pickLatestByReportDate(rows: SystemHealthRec[]): SystemHealthRec
   }
 
   return Object.values(byDate);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+type SHRow = {
+  sh_report_date: string;          // e.g. "2025-07-31"
+  last_updated_ts?: string | null; // e.g. "2025-09-26T17:53:08.083Z"
+  // ...other fields
+};
+
+/**
+ * Returns one latest row per unique sh_report_date.
+ * - Compares only within the same sh_report_date.
+ * - If last_updated_ts is invalid/missing, treats it as the smallest value.
+ * - If timestamps tie, keeps the first seen (stable).
+ */
+export function latestPerReportDate(rows: SHRow[]): SHRow[] {
+  const byDate = new Map<string, SHRow>();
+
+  for (const rec of rows) {
+    const key = (rec.sh_report_date ?? "").trim();
+    if (!key) continue;
+
+    const candidateTime = Date.parse(rec.last_updated_ts ?? "");
+    const candScore = Number.isNaN(candidateTime) ? -Infinity : candidateTime;
+
+    const existing = byDate.get(key);
+    if (!existing) {
+      byDate.set(key, rec);
+      continue;
+    }
+
+    const existingTime = Date.parse(existing.last_updated_ts ?? "");
+    const existScore = Number.isNaN(existingTime) ? -Infinity : existingTime;
+
+    if (candScore > existScore) {
+      byDate.set(key, rec);
+    }
+    // else if candScore === existScore: tie -> keep existing (stable)
+  }
+
+  // Optional: sort by report date desc so UI can bind directly.
+  return Array.from(byDate.values()).sort((a, b) =>
+    (b.sh_report_date ?? "").localeCompare(a.sh_report_date ?? "")
+  );
+}
