@@ -1,0 +1,42 @@
+import { DateTime } from 'luxon';
+
+type SHRow = {
+  sh_report_date: string;
+  sh_status?: string;
+  sh_addtnl_info?: string | null;
+};
+
+// parse JSON safely
+const parseInfo = (s?: string | null) => {
+  if (!s || !s.trim()) return null;
+  try { return JSON.parse(s) as { estimated_completion?: string }; } catch { return null; }
+};
+
+// interpret timestamps as America/New_York even if they end with Z/offset
+const parseAsEasternLocal = (raw?: string | null): DateTime | null => {
+  if (!raw) return null;
+  const clean = raw.trim().replace(/([+\-]\d{2}:\d{2}|Z)$/i, '');
+  const dt = DateTime.fromISO(clean, { zone: 'America/New_York' });
+  return dt.isValid ? dt : null;
+};
+
+export function splitByDeadline(rows: SHRow[]): { inProgress: string[]; failed: string[] } {
+  const nowET = DateTime.now().setZone('America/New_York');
+  const inProgress: string[] = [];
+  const failed: string[] = [];
+
+  for (const r of rows) {
+    if ((r.sh_status ?? '').toUpperCase() !== 'I') continue;
+
+    const info = parseInfo(r.sh_addtnl_info);
+    const ec   = parseAsEasternLocal(info?.estimated_completion ?? null);
+
+    if (ec && ec < nowET) {
+      failed.push(r.sh_report_date.slice(0, 10));
+    } else {
+      inProgress.push(r.sh_report_date.slice(0, 10));
+    }
+  }
+
+  return { inProgress, failed };
+}
