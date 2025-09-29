@@ -1,0 +1,40 @@
+/** 
+ * Consolidated summary for system health. 
+ * - "Error"   → if any cell is Error or NotReceived/NotGenerated/Unmapped
+ * - "Warning" → if no Error, but at least one Warning
+ * - "Success" → if all are Success (green)
+ */
+export function buildSummary(rowsA: Row[], rowsS: Row[], colsM: MappingColumn[]): 'Error' | 'Warning' | 'Success' {
+  let hasError = false;
+  let hasWarning = false;
+
+  // check Axiom + Source rows
+  const allCells = [...rowsA, ...rowsS].flatMap(r => r.cells ?? []);
+  for (const c of allCells) {
+    if (!c) continue;
+    if (c.kind === 'Error' || c.kind === 'NotReceived' || c.kind === 'NotGenerated') {
+      hasError = true;
+      break;
+    }
+    if (c.kind === 'Warning') {
+      hasWarning = true;
+    }
+  }
+
+  // check Mapping columns
+  if (!hasError) {
+    for (const m of colsM) {
+      if (m.status === 'Error' || m.status === 'NotReceived' || m.status === 'NotGenerated') {
+        hasError = true;
+        break;
+      }
+      if (m.status === 'Warning') {
+        hasWarning = true;
+      }
+    }
+  }
+
+  if (hasError) return 'Error';
+  if (hasWarning) return 'Warning';
+  return 'Success';
+}
