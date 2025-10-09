@@ -1,42 +1,46 @@
-if (headerArray && mappingHeader) {
-  const missingHeaders: string[] = [];
-  const extraHeaders: string[] = [];
+// ---- Header validation (worker) ----
+if (Array.isArray(headerArray) && Array.isArray(mappingHeader)) {
+  const norm = (v: any) => String(v ?? "").trim().toLowerCase();
 
-  // Find missing (expected but not found)
-  mappingHeader.forEach((col: string) => {
-    if (!headerArray.includes(col)) {
-      missingHeaders.push(col);
-    }
-  });
+  // expected headers come from mappingHeader[].excelDisplayHeader
+  const expectedList = mappingHeader
+    .map((o: any) => o?.excelDisplayHeader)
+    .filter(Boolean)
+    .map(norm);
 
-  // Find extra (found but not expected)
-  headerArray.forEach((col: string) => {
-    if (!mappingHeader.includes(col)) {
-      extraHeaders.push(col);
-    }
-  });
+  const uploadedList = headerArray.filter(Boolean).map(norm);
 
-  if (missingHeaders.length > 0 || extraHeaders.length > 0) {
-    const messageLines: string[] = [];
+  const expected = new Set(expectedList);
+  const uploaded = new Set(uploadedList);
 
-    if (missingHeaders.length) {
-      messageLines.push(`Missing column(s): ${missingHeaders.join(", ")}`);
-    }
+  const missingHeaders = [...expected].filter(h => !uploaded.has(h));
+  const extraHeaders   = [...uploaded].filter(h => !expected.has(h));
 
-    if (extraHeaders.length) {
-      messageLines.push(`Extra column(s): ${extraHeaders.join(", ")}`);
-    }
+  // DEBUG (leave these for now)
+  console.log('[hdr-check] expected:', [...expected]);
+  console.log('[hdr-check] uploaded:', [...uploaded]);
+  console.log('[hdr-check] missing :', missingHeaders);
+  console.log('[hdr-check] extra   :', extraHeaders);
+
+  const hasMismatch = missingHeaders.length > 0 || extraHeaders.length > 0;
+
+  if (hasMismatch) {
+    const parts: string[] = [];
+    if (missingHeaders.length) parts.push(`Missing column(s): ${missingHeaders.join(', ')}`);
+    if (extraHeaders.length)   parts.push(`Extra column(s): ${extraHeaders.join(', ')}`);
 
     postMessage({
       error: true,
       message: [
         'Invalid File',
-        `Found mismatch in column name(s):\n${messageLines.join("\n")}`
+        `Found mismatch in column name(s):\n${parts.join('\n')}`
       ]
     });
-  } else {
-    console.log('✅ All headers match!');
+
+    close();   // IMPORTANT: stop the worker after posting
+    return;    // ensure no further code runs
   }
 
-  close();
+  console.log('✅ All headers match');
+  // (continue normal flow or close())
 }
