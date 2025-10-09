@@ -1,46 +1,49 @@
-// ---- Header validation (worker) ----
+// ---- PATCH: header validation (worker) ----
 if (Array.isArray(headerArray) && Array.isArray(mappingHeader)) {
-  const norm = (v: any) => String(v ?? "").trim().toLowerCase();
+  // Build arrays of plain header strings
+  const expected = mappingHeader
+    .map((m: any) => String(m?.excelDisplayHeader ?? "").trim())
+    .filter(Boolean);
 
-  // expected headers come from mappingHeader[].excelDisplayHeader
-  const expectedList = mappingHeader
-    .map((o: any) => o?.excelDisplayHeader)
-    .filter(Boolean)
-    .map(norm);
+  const uploaded = headerArray
+    .map((h: any) => String(h ?? "").trim())
+    .filter(Boolean);
 
-  const uploadedList = headerArray.filter(Boolean).map(norm);
+  // Use Sets for clean diff (handles dupes)
+  const expSet = new Set(expected);
+  const upSet  = new Set(uploaded);
 
-  const expected = new Set(expectedList);
-  const uploaded = new Set(uploadedList);
+  const missingHeaders = [...expSet].filter(h => !upSet.has(h));   // expected but not found
+  const extraHeaders   = [...upSet].filter(h => !expSet.has(h));   // found but not expected
 
-  const missingHeaders = [...expected].filter(h => !uploaded.has(h));
-  const extraHeaders   = [...uploaded].filter(h => !expected.has(h));
-
-  // DEBUG (leave these for now)
-  console.log('[hdr-check] expected:', [...expected]);
-  console.log('[hdr-check] uploaded:', [...uploaded]);
+  // Debug (leave temporarily)
+  console.log('[hdr-check] expected:', [...expSet]);
+  console.log('[hdr-check] uploaded:', [...upSet]);
   console.log('[hdr-check] missing :', missingHeaders);
   console.log('[hdr-check] extra   :', extraHeaders);
 
   const hasMismatch = missingHeaders.length > 0 || extraHeaders.length > 0;
 
   if (hasMismatch) {
-    const parts: string[] = [];
-    if (missingHeaders.length) parts.push(`Missing column(s): ${missingHeaders.join(', ')}`);
-    if (extraHeaders.length)   parts.push(`Extra column(s): ${extraHeaders.join(', ')}`);
+    const messageLines: string[] = ['Invalid File', 'Found mismatch in column name(s):'];
+    if (missingHeaders.length) messageLines.push(`Missing column(s): ${missingHeaders.join(', ')}`);
+    if (extraHeaders.length)   messageLines.push(`Extra column(s): ${extraHeaders.join(', ')}`);
 
-    postMessage({
+    const message =
+      messageLines[0] + '\n' +
+      messageLines.slice(1).join('\n');
+
+    // Use self.postMessage in workers (avoids any scoping confusion)
+    self.postMessage({
       error: true,
-      message: [
-        'Invalid File',
-        `Found mismatch in column name(s):\n${parts.join('\n')}`
-      ]
+      // send both forms so UI can consume either
+      message,            // string (with \n)
+      messageLines        // array of lines
     });
 
-    close();   // IMPORTANT: stop the worker after posting
-    return;    // ensure no further code runs
+    try { self.close(); } catch {}
+    return; // IMPORTANT: stop further execution
   }
 
-  console.log('✅ All headers match');
-  // (continue normal flow or close())
+  console.log('✅ Header validation passed');
 }
