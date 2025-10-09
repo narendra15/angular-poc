@@ -1,0 +1,42 @@
+if (headerArray && mappingHeader) {
+  const missingHeaders: string[] = [];
+  const extraHeaders: string[] = [];
+
+  // Find missing (expected but not found)
+  mappingHeader.forEach((col: string) => {
+    if (!headerArray.includes(col)) {
+      missingHeaders.push(col);
+    }
+  });
+
+  // Find extra (found but not expected)
+  headerArray.forEach((col: string) => {
+    if (!mappingHeader.includes(col)) {
+      extraHeaders.push(col);
+    }
+  });
+
+  if (missingHeaders.length > 0 || extraHeaders.length > 0) {
+    const messageLines: string[] = [];
+
+    if (missingHeaders.length) {
+      messageLines.push(`Missing column(s): ${missingHeaders.join(", ")}`);
+    }
+
+    if (extraHeaders.length) {
+      messageLines.push(`Extra column(s): ${extraHeaders.join(", ")}`);
+    }
+
+    postMessage({
+      error: true,
+      message: [
+        'Invalid File',
+        `Found mismatch in column name(s):\n${messageLines.join("\n")}`
+      ]
+    });
+  } else {
+    console.log('✅ All headers match!');
+  }
+
+  close();
+}
