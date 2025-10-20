@@ -33,3 +33,93 @@ const upDatedBody = lines.slice(1).map((line: string) => {
 
   return formattedCols.join(',');
 });
+
+
+
+
+
+
+
+
+////------------////
+
+
+
+
+
+
+
+
+
+private formatCsvValue(value: string, dataType: string): string {
+  // keep empty as-is
+  if (value === '') return value;
+
+  if (dataType === 'decimal') {
+    const num = Number(value);
+    if (!isNaN(num)) return num.toFixed(3);
+    return value;
+  }
+
+  if (dataType === 'integer') {
+    // trim leading zeros, preserve negative and + sign if any
+    const match = value.match(/^([+-]?)(\d+)$/);
+    if (!match) return value;
+    const sign = match[1];
+    const digits = match[2].replace(/^0+(?=\d)/, '');
+    return `${sign}${digits}`;
+  }
+
+  // keep all other types as-is
+  return value;
+}
+
+// CSV-safe splitter (handles commas inside quotes, keeps empty)
+private parseCsvLine(line: string): string[] {
+  const result: string[] = [];
+  let current = '';
+  let insideQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    if (char === '"') {
+      if (insideQuotes && line[i + 1] === '"') {
+        current += '"';
+        i++; // skip next quote
+      } else {
+        insideQuotes = !insideQuotes;
+      }
+    } else if (char === ',' && !insideQuotes) {
+      result.push(current);
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  result.push(current);
+  return result;
+}
+
+// escape CSV safely
+private escapeCsv(val: string): string {
+  if (val.includes(',') || val.includes('"') || val.includes('\n')) {
+    return `"${val.replace(/"/g, '""')}"`;
+  }
+  return val;
+}
+
+
+
+
+// integrate in your download logic
+const upDatedBody = lines.slice(1).map((line: string) => {
+  const cols = this.parseCsvLine(line);
+
+  const formattedCols = cols.map((val, idx) => {
+    const type = this.dataType[idx]?.dataType?.toLowerCase() || 'string';
+    return this.formatCsvValue(val, type);
+  });
+
+  // rejoin preserving empties and quotes
+  return formattedCols.map(this.escapeCsv).join(',');
+});
