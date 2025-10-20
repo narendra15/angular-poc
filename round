@@ -9,3 +9,27 @@ function formatValue(value: string | number, dataType: 'decimal' | 'integer'): s
   }
   return String(value);
 }
+
+
+
+
+const upDatedBody = lines.slice(1).map((line: string) => {
+  // ✅ Split correctly even when commas are inside quotes
+  const cols = line.match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g) || [];
+
+  const formattedCols = cols.map((val) => {
+    // Remove wrapping quotes temporarily for detection
+    const cleanVal = val.replace(/^"|"$/g, '');
+
+    if (cleanVal.includes('.') && !isNaN(Number(cleanVal))) {
+      return this.formatValue(cleanVal, 'decimal');
+    } else if (!isNaN(Number(cleanVal))) {
+      return this.formatValue(cleanVal, 'integer');
+    }
+
+    // Keep quotes if originally quoted
+    return val;
+  });
+
+  return formattedCols.join(',');
+});
