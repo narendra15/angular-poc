@@ -1,0 +1,11 @@
+function formatValue(value: string | number, dataType: 'decimal' | 'integer'): string {
+  if (dataType === 'decimal') {
+    const num = Number(value);
+    if (isNaN(num)) return String(value); // in case it's not a valid number
+    return num.toFixed(3);
+  } else if (dataType === 'integer') {
+    // Remove leading zeros but keep '0' if value is 0 or all zeros
+    return String(Number(value));
+  }
+  return String(value);
+}
