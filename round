@@ -123,3 +123,83 @@ const upDatedBody = lines.slice(1).map((line: string) => {
   // rejoin preserving empties and quotes
   return formattedCols.map(this.escapeCsv).join(',');
 });
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// Parse one CSV line (handles quotes, commas-in-quotes, and "" escapes)
+function parseCsvLine(line: string): (string | null)[] {
+  const out: string[] = [];
+  let cur = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+
+    if (ch === '"') {
+      // Handle escaped quote ("")
+      if (inQuotes && line[i + 1] === '"') {
+        cur += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (ch === ',' && !inQuotes) {
+      out.push(cur);
+      cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  out.push(cur);
+
+  // Keep truly empty columns as null (so index 0 can be null)
+  return out.map(v => (v === '' ? null : v));
+}
+
+// Convert the "lines dataSnap" array into the numeric-keyed row objects
+function toExcelRows(linesDataSnap: string[]): Array<Record<number, string | null>> {
+  return linesDataSnap.map(line => {
+    const cols = parseCsvLine(line);
+    const rowObj: Record<number, string | null> = {};
+    for (let i = 0; i < cols.length; i++) {
+      rowObj[i] = cols[i]; // keys: 0,1,2,... matching your screenshot
+    }
+    return rowObj;
+  });
+}
+
+// Usage:
+this.excelRows = toExcelRows(linesDataSnap);
