@@ -256,3 +256,39 @@ export function escapeCsv(val: string): string {
 
 // Usage:
 this.excelRows = toExcelRows(linesDataSnap);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+const formattedCols = cols.map((val, idx) => {
+  const type = this.dataType[idx]?.dataType?.toLowerCase() || 'string';
+  const formatted = this.formatCsvValue(val, type);
+
+  // ✅ Force quoting for decimals to preserve trailing zeros
+  if (type === 'decimal') {
+    return `"${formatted}"`;
+  }
+
+  return formatted;
+});
