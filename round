@@ -199,6 +199,59 @@ function toExcelRows(linesDataSnap: string[]): Array<Record<number, string | nul
     }
     return rowObj;
   });
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+export function escapeCsv(val: string): string {
+  val = String(val); // ensures safe string
+  if (val.includes(',') || val.includes('"') || val.includes('\n')) {
+    return `"${val.replace(/"/g, '""')}"`;
+  }
+  return val;
+}
 }
 
 // Usage:
