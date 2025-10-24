@@ -1,0 +1,83 @@
+// --- helper: format each value ---
+function formatCsvValue(value: string, dataType: string): string {
+  if (value === '') return value;
+
+  if (dataType === 'decimal') {
+    const num = Number(value);
+    if (isNaN(num)) return value;
+    // Always 3 decimals, returned as string
+    return num.toFixed(3);
+  }
+
+  if (dataType === 'integer') {
+    const match = value.match(/^([+-]?)(\d+)$/);
+    if (!match) return value;
+    const sign = match[1];
+    const digits = match[2].replace(/^0+(?=\d)/, '');
+    return `${sign}${digits}`;
+  }
+
+  return value;
+}
+
+// --- helper: split CSV safely (preserves empty & quotes) ---
+function parseCsvLine(line: string): string[] {
+  const result: string[] = [];
+  let current = '';
+  let insideQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    if (char === '"') {
+      if (insideQuotes && line[i + 1] === '"') {
+        current += '"';
+        i++;
+      } else {
+        insideQuotes = !insideQuotes;
+      }
+    } else if (char === ',' && !insideQuotes) {
+      result.push(current);
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  result.push(current);
+  return result;
+}
+
+// --- helper: rebuild CSV safely (no visible quotes) ---
+function escapeCsv(val: string): string {
+  val = String(val);
+  // Only quote if it has a real comma or newline
+  if (val.includes(',') || val.includes('\n') || val.includes('"')) {
+    // Escape embedded quotes properly
+    val = `"${val.replace(/"/g, '""')}"`;
+  }
+  return val;
+}
+
+// --- final logic in your onDownloadFile ---
+const upDatedBody = lines.slice(1).map((line: string) => {
+  const cols = parseCsvLine(line);
+
+  const formattedCols = cols.map((val, idx) => {
+    const type = dataType[idx]?.dataType?.toLowerCase() || 'string';
+    return formatCsvValue(val, type);
+  });
+
+  return formattedCols.map(escapeCsv).join(',');
+});
+
+const newHeaderLine = lines[0];
+const updatedLines = [newHeaderLine, ...upDatedBody];
+const newCsv = updatedLines.join('\n');
+
+// Download as CSV
+const blob = new Blob([newCsv], { type: 'text/csv;charset=utf-8;' });
+const url = URL.createObjectURL(blob);
+const a = document.createElement('a');
+a.href = url;
+a.download = 'output.csv';
+a.click();
+URL.revokeObjectURL(url);
