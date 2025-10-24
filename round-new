@@ -1,0 +1,102 @@
+// 1) install: npm i xlsx
+import * as XLSX from 'xlsx';
+
+// assume you already have:
+/// lines: string[]  (first is header)
+/// dataType: { dataType: string; header: string }[]  (same length as columns)
+
+function toRows(lines: string[]): string[][] {
+  const parse = (line: string): string[] => {
+    const out: string[] = [];
+    let cur = '', inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        if (inQ && line[i + 1] === '"') { cur += '"'; i++; }
+        else inQ = !inQ;
+      } else if (ch === ',' && !inQ) { out.push(cur); cur = ''; }
+      else cur += ch;
+    }
+    out.push(cur);
+    return out;
+  };
+  return lines.map(parse);
+}
+
+function formatForType(val: string, t: string): string | number {
+  if (val === '') return ''; // keep empties
+  if (t === 'integer') {
+    const m = val.match(/^([+-]?)(\d+)$/);
+    if (!m) return val;
+    const sign = m[1];
+    const digits = m[2].replace(/^0+(?=\d)/, '');
+    return (sign + digits);
+  }
+  if (t === 'decimal') {
+    const n = Number(val);
+    return Number.isFinite(n) ? Number(n.toFixed(3)) : val; // store as number
+  }
+  return val; // leave strings/dates as-is
+}
+
+function downloadXlsx(lines: string[], dataType: { dataType: string; header: string }[], fileName = 'output.xlsx') {
+  const rows = toRows(lines);
+  const header = rows[0];
+  const body = rows.slice(1);
+
+  // Format cells by type
+  const typedRows = [
+    header,
+    ...body.map(r => r.map((v, i) => formatForType(v, (dataType[i]?.dataType || 'string').toLowerCase())))
+  ];
+
+  // Build worksheet
+  const ws = XLSX.utils.aoa_to_sheet(typedRows);
+
+  // Apply number format "0.000" to decimal columns
+  typedRows[0].forEach((_, colIdx) => {
+    const t = (dataType[colIdx]?.dataType || 'string').toLowerCase();
+    if (t === 'decimal') {
+      // iterate each row (skip header)
+      for (let rowIdx = 1; rowIdx < typedRows.length; rowIdx++) {
+        const cellAddr = XLSX.utils.encode_cell({ r: rowIdx, c: colIdx });
+        const cell = ws[cellAddr];
+        if (!cell) continue;
+        // Ensure numeric cell + set format
+        if (typeof cell.v === 'number') {
+          cell.t = 'n';
+          cell.z = '0.000'; // <-- forces 3 decimals in Excel without quotes
+        }
+      }
+    }
+    if (t === 'integer') {
+      // make sure integers are numeric (optional)
+      for (let rowIdx = 1; rowIdx < typedRows.length; rowIdx++) {
+        const cellAddr = XLSX.utils.encode_cell({ r: rowIdx, c: colIdx });
+        const cell = ws[cellAddr];
+        if (!cell) continue;
+        if (cell.v === '') continue;
+        const n = Number(cell.v);
+        if (Number.isFinite(n)) { cell.t = 'n'; cell.v = n; }
+      }
+    }
+  });
+
+  // Auto width (optional)
+  ws['!cols'] = header.map(h => ({ wch: Math.max(8, String(h).length) }));
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Data');
+
+  // Download
+  const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
