@@ -1,0 +1,17 @@
+if (dataType === 'decimal') {
+    const num = Number(value);
+    if (isNaN(num)) return value;
+
+    // --- detect how many decimals existed originally ---
+    const decimalPart = value.includes('.') ? value.split('.')[1] : '';
+    const originalDecimals = decimalPart.length;
+
+    // --- Round to 3 decimals ---
+    const rounded = Math.round(num * 1000) / 1000;
+
+    // --- Case 1: if original decimals > 3, show exactly 3 (like 1.23000000 → 1.230)
+    if (originalDecimals > 3) return rounded.toFixed(3);
+
+    // --- Case 2: if original decimals <= 3, keep as is (no forced zeros)
+    return parseFloat(rounded.toString()).toString();
+  }
