@@ -44,3 +44,35 @@ function formatDateToYYYYMMDD(dateInput: Date): string {
   // Step 3: Format it into plain YYYY-MM-DD for consistent output
   return normalized.toFormat('yyyy-MM-dd');
 }o
+
+
+
+
+
+
+
+
+
+
+
+
+import { DateTime } from 'luxon';
+
+const TARGET_ZONE = 'America/Toronto';  // your app’s fixed zone (EST/EDT)
+
+export function formatDateToYYYYMMDD(dateInput: Date): string {
+  // 1) Source zone = uploader’s browser zone
+  const SOURCE_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+  // 2) Recover uploader’s calendar date from the instant
+  const seenByUploader = DateTime.fromJSDate(dateInput).setZone(SOURCE_ZONE);
+
+  // 3) Rebuild that Y-M-D as EST/EDT midnight
+  const normalized = DateTime.fromObject(
+    { year: seenByUploader.year, month: seenByUploader.month, day: seenByUploader.day },
+    { zone: TARGET_ZONE }
+  ).startOf('day');
+
+  // 4) Return YYYY-MM-DD
+  return normalized.toFormat('yyyy-MM-dd');
+}
