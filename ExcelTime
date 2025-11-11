@@ -1,0 +1,24 @@
+import { DateTime } from 'luxon';
+
+function formatDateToYYYYMMDD(dateInput: Date | string | number): string {
+  console.log('formatDateToYYYYMMDD', dateInput);
+
+  // Convert any input to DateTime in EST
+  let dt: DateTime;
+
+  if (dateInput instanceof Date) {
+    // Excel gives JS Date objects, so interpret as system time, then shift to EST
+    dt = DateTime.fromJSDate(dateInput, { zone: 'America/Toronto' });
+  } else if (typeof dateInput === 'string' || typeof dateInput === 'number') {
+    // For string like "2025-07-31" or serial numbers
+    dt = DateTime.fromISO(String(dateInput), { zone: 'America/Toronto' });
+  } else {
+    throw new Error('Invalid date input');
+  }
+
+  // Normalize to midnight in EST
+  const normalized = dt.startOf('day').setZone('America/Toronto');
+
+  // Return in YYYY-MM-DD format
+  return normalized.toFormat('yyyy-MM-dd');
+}
