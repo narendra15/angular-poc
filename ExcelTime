@@ -22,3 +22,25 @@ function formatDateToYYYYMMDD(dateInput: Date | string | number): string {
   // Return in YYYY-MM-DD format
   return normalized.toFormat('yyyy-MM-dd');
 }
+
+
+
+
+
+
+
+import { DateTime } from 'luxon';
+
+function formatDateToYYYYMMDD(dateInput: Date): string {
+  console.log('formatDateToYYYYMMDD', dateInput);
+
+  // Step 1: Convert the JS Date into Luxon's DateTime object
+  // Interpret it in the 'America/Toronto' (EST/EDT) timezone
+  const dt = DateTime.fromJSDate(dateInput, { zone: 'America/Toronto' });
+
+  // Step 2: Normalize to midnight in EST to eliminate time drift
+  const normalized = dt.startOf('day').setZone('America/Toronto');
+
+  // Step 3: Format it into plain YYYY-MM-DD for consistent output
+  return normalized.toFormat('yyyy-MM-dd');
+}o
