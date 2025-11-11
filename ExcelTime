@@ -76,3 +76,39 @@ export function formatDateToYYYYMMDD(dateInput: Date): string {
   // 4) Return YYYY-MM-DD
   return normalized.toFormat('yyyy-MM-dd');
 }
+
+
+
+
+
+
+
+
+
+
+
+import { DateTime } from 'luxon';
+
+const TARGET_ZONE = 'America/Toronto'; // EST/EDT
+
+export function formatDateToYYYYMMDD(dateInput: Date | string): string {
+  // 1) Parse while preserving the zone from the string (or JS Date’s instant)
+  let dt = (typeof dateInput === 'string')
+    ? DateTime.fromISO(dateInput, { setZone: true })       // keeps +05:30, etc.
+    : DateTime.fromJSDate(dateInput);                      // uses local system zone
+
+  // 2) If SheetJS gave times near midnight (e.g., 23:59), nudge forward to snap to the intended day
+  //    (You can widen this window if your files show 23:58~00:02 variations.)
+  if (dt.hour === 23 && dt.minute >= 55) {
+    dt = dt.plus({ minutes: 10 }); // 23:59 -> next day 00:09
+  }
+
+  // 3) Take the calendar parts from that local view
+  const y = dt.year, m = dt.month, d = dt.day;
+
+  // 4) Rebuild the SAME Y-M-D at midnight in EST/EDT and format
+  const est = DateTime.fromObject({ year: y, month: m, day: d }, { zone: TARGET_ZONE })
+    .startOf('day');
+
+  return est.toFormat('yyyy-MM-dd');
+}
