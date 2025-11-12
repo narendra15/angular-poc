@@ -112,3 +112,26 @@ export function formatDateToYYYYMMDD(dateInput: Date | string): string {
 
   return est.toFormat('yyyy-MM-dd');
 }
+
+
+
+
+
+
+
+
+
+
+
+
+function getExcelDateAsDate(excelDate: number): string {
+  // Excel stores days since Dec 31, 1899
+  // We convert that serial directly to a UTC date (no timezone shift!)
+  const d = new Date(Date.UTC(1899, 11, 30) + excelDate * 86400000);
+
+  const year = d.getUTCFullYear();
+  const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+
+  return `${year}-${month}-${day}`; // "YYYY-MM-DD"
+}
