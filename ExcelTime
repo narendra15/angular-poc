@@ -135,3 +135,34 @@ function getExcelDateAsDate(excelDate: number): string {
 
   return `${year}-${month}-${day}`; // "YYYY-MM-DD"
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+function getExcelDateAsDate(excelDate) {
+  const dt = DateTime.fromMillis(
+    Date.UTC(1899, 11, 30) + excelDate * 86400000,
+    { zone: 'utc' }
+  ).setZone('America/Toronto');   // auto-handles DST
+  return dt.toFormat('yyyy-MM-dd');
+}
