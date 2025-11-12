@@ -166,3 +166,38 @@ function getExcelDateAsDate(excelDate) {
   ).setZone('America/Toronto');   // auto-handles DST
   return dt.toFormat('yyyy-MM-dd');
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+function excelSerialToESTYMD(serial: number): string {
+  // Step 1: get the intended Y-M-D in UTC
+  const baseUTC = DateTime.fromMillis(Date.UTC(1899, 11, 30) + serial * 86400000, { zone: 'utc' });
+  const { year, month, day } = baseUTC; // Y-M-D = 2025-07-31
+
+  // Step 2: rebuild that same calendar day at midnight in America/Toronto
+  const est = DateTime.fromObject({ year, month, day }, { zone: 'America/Toronto' }).startOf('day');
+  return est.toFormat('yyyy-MM-dd'); // "2025-07-31"
+}
