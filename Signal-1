@@ -1,0 +1,17 @@
+// validation-status.service.ts
+import { Injectable, signal } from '@angular/core';
+
+@Injectable({ providedIn: 'root' })
+export class ValidationStatusService {
+  // shared signal
+  validationStatus = signal<string[]>(['']);
+
+  setValidationStatus(status: string[]) {
+    this.validationStatus.set(status);
+  }
+
+  // helper if you want to push values
+  addStatus(status: string) {
+    this.validationStatus.update(old => [...old, status]);
+  }
+}
