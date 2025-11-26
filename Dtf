@@ -76,3 +76,49 @@ export class ReportDateFilterComponent implements OnChanges {
     });
   }
 }
+
+
+
+
+html
+
+
+
+<div [formGroup]="form" class="report-filter-container">
+
+  <!-- MONTH (Year+Month) -->
+  <mat-form-field appearance="outline" class="filter-field">
+    <mat-label>Month(s)</mat-label>
+    <mat-select formControlName="months" multiple>
+      <mat-option *ngFor="let m of monthKeys" [value]="m">
+        {{ m }}  <!-- e.g., 2025-10 -->
+      </mat-option>
+    </mat-select>
+  </mat-form-field>
+
+  <!-- DAY -->
+  <mat-form-field appearance="outline" class="filter-field">
+    <mat-label>Day(s)</mat-label>
+    <mat-select formControlName="days" multiple>
+      <mat-option *ngFor="let d of days" [value]="d">
+        {{ d }}
+      </mat-option>
+    </mat-select>
+  </mat-form-field>
+
+</div>
+
+
+
+
+css
+.report-filter-container {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.filter-field {
+  width: 200px;
+}
+
