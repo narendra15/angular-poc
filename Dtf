@@ -1,0 +1,96 @@
+// report-date-filter.component.ts
+import { Component, OnInit } from '@angular/core';
+import { FormBuilder } from '@angular/forms';
+
+@Component({
+  selector: 'app-report-date-filter',
+  templateUrl: './report-date-filter.component.html'
+})
+export class ReportDateFilterComponent implements OnInit {
+  allReportDates: string[] = [];        // filled from API
+
+  monthKeys: string[] = [];             // '2025-10', '2025-11', ...
+  days: string[] = [];                  // '01', '05', '31', ...
+
+  form = this.fb.group({
+    months: [[] as string[]],           // multi-select
+    days:   [{ value: [] as string[], disabled: true }]
+  });
+
+  constructor(private fb: FormBuilder) {}
+
+  ngOnInit(): void {
+    // TODO: replace with service call
+    this.allReportDates = [
+      '2025-10-01',
+      '2025-10-05',
+      '2025-10-31',
+      '2025-11-01',
+      '2026-01-15'
+    ];
+
+    this.buildMonthKeyList();
+
+    this.form.get('months')!.valueChanges
+      .subscribe(months => this.onMonthsChange(months as string[]));
+  }
+
+  private buildMonthKeyList() {
+    this.monthKeys = Array.from(
+      new Set(this.allReportDates.map(d => d.substring(0, 7)))   // YYYY-MM
+    ).sort();
+  }
+
+  private onMonthsChange(selectedMonths: string[]) {
+    // reset days whenever months change
+    this.form.patchValue({ days: [] }, { emitEvent: false });
+
+    if (!selectedMonths.length) {
+      // no months → disable days
+      this.form.get('days')!.disable({ emitEvent: false });
+      this.days = [];
+      return;
+    }
+
+    // enable days
+    this.form.get('days')!.enable({ emitEvent: false });
+
+    // build distinct days from dates whose YYYY-MM is in selectedMonths
+    this.days = Array.from(
+      new Set(
+        this.allReportDates
+          .filter(d => selectedMonths.includes(d.substring(0, 7))) // YYYY-MM
+          .map(d => d.substring(8, 10))                             // DD
+      )
+    ).sort();
+  }
+
+  // Optional: local filtering preview
+  getFilteredDates(): string[] {
+    const months = this.form.value.months as string[];
+    const days   = this.form.value.days as string[];
+
+    return this.allReportDates.filter(d => {
+      const monthKey = d.substring(0, 7);  // YYYY-MM
+      const day      = d.substring(8, 10); // DD
+
+      if (months.length && !months.includes(monthKey)) return false;
+      if (days.length && !days.includes(day)) return false;
+
+      return true;
+    });
+  }
+
+  applyFilter() {
+    const months = this.form.value.months as string[];
+    const days   = this.form.value.days as string[];
+
+    const payload = { months, days };
+
+    console.log('Report-date filters:', payload);
+
+    // 👉 send to backend along with template/app info
+    // this.cfufService.getFilteredData(templateId, appName, payload)
+    //   .subscribe(...);
+  }
+}
