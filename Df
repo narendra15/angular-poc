@@ -1,0 +1,122 @@
+import {
+  Component, Input, Output, EventEmitter,
+  OnChanges, SimpleChanges
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormBuilder, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatInputModule } from '@angular/material/input';
+import { MatDatepickerModule } from '@angular/material/datepicker';
+import { MatNativeDateModule } from '@angular/material/core';
+
+@Component({
+  selector: 'app-report-date-filter',
+  standalone: true,
+  imports: [
+    CommonModule,
+    ReactiveFormsModule,
+    MatFormFieldModule,
+    MatInputModule,
+    MatDatepickerModule,
+    MatNativeDateModule
+  ],
+  templateUrl: './report-date-filter.component.html',
+  styleUrls: ['./report-date-filter.component.scss']
+})
+export class ReportDateFilterComponent implements OnChanges {
+
+  /** Allowed dates from parent, format: YYYY-MM-DD */
+  @Input() dates: string[] = [];
+
+  /** Emits selected date as YYYY-MM-DD (or null if cleared) */
+  @Output() dateChange = new EventEmitter<string | null>();
+
+  form: FormGroup;
+  /** Set for fast lookup of allowed dates */
+  private allowedDateSet = new Set<string>();
+
+  constructor(private fb: FormBuilder) {
+    this.form = this.fb.group({
+      date: [null as Date | null]
+    });
+
+    this.form.get('date')!.valueChanges.subscribe((value: Date | null) => {
+      const formatted = value ? this.toYmd(value) : null;
+      this.dateChange.emit(formatted);
+    });
+  }
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['dates']) {
+      this.allowedDateSet = new Set(this.dates ?? []);
+      // reset selection when date list changes
+      this.form.patchValue({ date: null }, { emitEvent: false });
+      this.dateChange.emit(null);
+    }
+  }
+
+  /** Used by matDatepickerFilter – only return true for allowed dates */
+  dateFilter = (d: Date | null): boolean => {
+    if (!d) return false;
+    const key = this.toYmd(d);
+    // if list empty, disable all; or change to "return true" to allow all
+    return this.allowedDateSet.has(key);
+  };
+
+  clear() {
+    this.form.patchValue({ date: null });
+  }
+
+  private toYmd(d: Date): string {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+}
+
+
+
+
+<div [formGroup]="form" class="report-filter-container">
+  <mat-form-field appearance="outline" class="filter-field">
+    <mat-label>Reporting date</mat-label>
+    <input
+      matInput
+      [matDatepicker]="picker"
+      formControlName="date"
+      [matDatepickerFilter]="dateFilter"
+      placeholder="Select reporting date"
+    />
+    <mat-datepicker-toggle matSuffix [for]="picker"></mat-datepicker-toggle>
+    <mat-datepicker #picker></mat-datepicker>
+  </mat-form-field>
+
+  <!-- optional clear button -->
+  <!-- <button mat-button type="button" (click)="clear()">Clear</button> -->
+</div>
+
+
+
+
+
+
+
+
+
+
+main
+
+
+<app-report-date-filter
+  [dates]="distinctReportDates"   <!-- ['2025-10-01','2025-10-05',...] -->
+  (dateChange)="onReportDateChange($event)">
+</app-report-date-filter>
+
+
+onReportDateChange(date: string | null) {
+  console.log('Selected report date:', date);
+  // Call your filter / download API with this date
+}
+
+
