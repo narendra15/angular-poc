@@ -1,0 +1,61 @@
+// 1) CSV -> JSON (array of objects)
+function csvToJson(csv: string): any[] {
+  const lines = csv.split('\n').filter(l => l.trim().length > 0);
+  const headers = lines[0].split(',').map(h => h.trim());
+
+  return lines.slice(1).map(line => {
+    const values = line.split(',');
+    const obj: any = {};
+    headers.forEach((header, idx) => {
+      obj[header] = values[idx]?.trim() ?? '';
+    });
+    return obj;
+  });
+}
+
+// 2) JSON -> CSV
+function jsonToCsv(data: any[], headers?: string[]): string {
+  if (!data.length) {
+    return headers ? headers.join(',') : '';
+  }
+
+  const keys = headers ?? Object.keys(data[0]);
+  const headerLine = keys.join(',');
+
+  const lines = data.map(row =>
+    keys
+      .map(k => (row[k] ?? '').toString())
+      .join(',')
+  );
+
+  return [headerLine, ...lines].join('\n');
+}
+
+
+
+
+
+
+
+/**
+ * Filters a CSV by one column and returns a new CSV string.
+ * @param csv        Original CSV string
+ * @param column     Column name to filter on (must match header)
+ * @param value      Exact value to keep
+ */
+function filterCsvByColumn(csv: string, column: string, value: string): string {
+  if (!csv.trim()) return csv;
+
+  // Step 1: CSV -> JSON
+  const jsonData = csvToJson(csv);
+
+  // Step 2: Filter JSON
+  const filtered = jsonData.filter(row => row[column] === value);
+
+  // Step 3: JSON -> CSV (use original headers order)
+  const headerLine = csv.split('\n').find(l => l.trim().length > 0) ?? '';
+  const headers = headerLine.split(',').map(h => h.trim());
+
+  return jsonToCsv(filtered, headers);
+}
+
