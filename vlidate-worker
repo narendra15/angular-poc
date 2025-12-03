@@ -30,3 +30,49 @@ function validateData(value: any): any {
 
   return output;
 }
+
+
+
+
+
+
+
+
+
+
+function validateData(value: any): any {
+  if (typeof value !== 'string') {
+    return value;
+  }
+
+  // FAST PATH: plain ASCII (letters, digits, basic punctuation)
+  // If this passes, we don't touch the string at all
+  const asciiRegex = /^[\x20-\x7E]+$/;
+  if (asciiRegex.test(value)) {
+    return value;
+  }
+
+  let output = value;
+
+  // 1. Replace control characters (tabs, newlines, etc.) with a space
+  output = output.replace(/[\u0000-\u001F\u007F]/g, ' ');
+
+  // 2. Normalize and remove accent marks (é → e, ñ → n, etc.)
+  output = output.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+  // 3. Replace ligatures as you requested
+  output = output
+    .replace(/Æ/g, 'AE')
+    .replace(/æ/g, 'ae')
+    .replace(/Œ/g, 'OE')
+    .replace(/œ/g, 'oe');
+
+  // 4. Remove Asian characters (CJK, Hiragana, Katakana, Hangul) → replace with space
+  const asianRegex = /[\u3040-\u30FF\u4E00-\u9FFF\uAC00-\uD7AF]/g;
+  output = output.replace(asianRegex, ' ');
+
+  // ❗ NOTE: we do NOT have `.replace(/[^\x20-\x7E]/g, ' ')` anymore,
+  // so characters like EN DASH, EM DASH, €, ™, emojis, etc. are preserved.
+
+  return output;
+}
