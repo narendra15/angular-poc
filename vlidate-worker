@@ -1,0 +1,32 @@
+function validateData(value: any): any {
+  if (typeof value !== 'string') {
+    return value;
+  }
+
+  // FAST PATH: If it's already plain English ASCII characters (A–Z, 0–9, punctuation)
+  const englishAsciiRegex = /^[\x20-\x7E]+$/;
+  if (englishAsciiRegex.test(value)) {
+    return value; // Return as-is, fastest scenario
+  }
+
+  let output = value;
+
+  // 1. Replace control characters (tabs, newlines, etc.) with space
+  output = output.replace(/[\u0000-\u001F\u007F]/g, ' ');
+
+  // 2. Normalize accents (é → e, ü → u, etc.)
+  output = output.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+  // 3. Replace ligatures (as requested)
+  output = output
+    .replace(/Æ/g, 'AE')
+    .replace(/æ/g, 'ae')
+    .replace(/Œ/g, 'OE')
+    .replace(/œ/g, 'oe');
+
+  // 4. Remove Asian characters (replace with space)
+  const asianRegex = /[\u3040-\u30FF\u4E00-\u9FFF\uAC00-\uD7AF]/g;
+  output = output.replace(asianRegex, ' ');
+
+  return output;
+}
