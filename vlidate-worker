@@ -76,3 +76,26 @@ function validateData(value: any): any {
 
   return output;
 }
+
+
+
+
+
+
+
+
+
+
+
+
+///// Allow all UTF_8
+
+function validateData(value: any): any {
+  if (typeof value !== 'string') {
+    return value;
+  }
+
+  // Replace ASCII control characters (tabs, newlines, etc.) with a space
+  // Control chars: U+0000–U+001F and U+007F
+  return value.replace(/[\u0000-\u001F\u007F]/g, ' ');
+}
