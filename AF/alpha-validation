@@ -1,0 +1,32 @@
+onInput(event: Event): void {
+  let input = (event.target as HTMLInputElement).value;
+  let hasInvalidChars = false;
+
+  if (this.enableCapsWithSpacesOnly) {
+    const original = input;
+
+    // Convert to uppercase
+    input = input.toUpperCase();
+
+    // Detect invalid characters
+    hasInvalidChars = /[^A-Z ]/.test(input);
+
+    // Remove invalid characters
+    input = input.replace(/[^A-Z ]/g, '');
+
+    // Update the field visually
+    (event.target as HTMLInputElement).value = input;
+  }
+
+  // Set or clear error message
+  if (hasInvalidChars) {
+    this.errorMessage = 'Only capital letters (A–Z) and spaces are allowed';
+  } else {
+    this.errorMessage = null;
+  }
+
+  // Existing CVA flow
+  this.value = input;
+  this.onChange(input);
+  this.valueChange.emit(input);
+}
