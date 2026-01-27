@@ -30,3 +30,51 @@ onInput(event: Event): void {
   this.onChange(input);
   this.valueChange.emit(input);
 }
+
+
+
+
+////////////////////////////////////////
+
+
+onInput(event: Event): void {
+  let input = (event.target as HTMLInputElement).value;
+
+  if (this.allowCapsWithSpacesOnly) {
+    const upper = input.toUpperCase();
+    const hasInvalid = /[^A-Z ]/.test(upper);
+
+    input = upper.replace(/[^A-Z ]/g, '');
+    (event.target as HTMLInputElement).value = input;
+
+    this.internalErrorMessage = hasInvalid
+      ? 'Only capital letters (A–Z) and spaces are allowed'
+      : '';
+
+    // ✅ IMPORTANT: make mat-form-field go to error state
+    if (this.internalControl) {
+      const existingErrors = this.internalControl.errors ?? {};
+
+      if (hasInvalid) {
+        this.internalControl.setErrors({ ...existingErrors, capsSpacesOnly: true });
+        this.internalControl.markAsDirty();   // helps show immediately
+        this.internalControl.markAsTouched(); // helps show immediately
+      } else {
+        // remove only our error, keep others (required, minlength, etc.)
+        const { capsSpacesOnly, ...rest } = existingErrors;
+        this.internalControl.setErrors(Object.keys(rest).length ? rest : null);
+      }
+    }
+  }
+
+  this.value = input;
+  this.onChange(input);
+  this.valueChange.emit(input);
+}
+
+
+//////////////
+
+@if ((internalControl?.hasError('capsSpacesOnly') && (internalControl?.touched || internalControl?.dirty)) || displayErrorMessage) {
+  <mat-error>{{ displayErrorMessage }}</mat-error>
+}
