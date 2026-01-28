@@ -1,0 +1,17 @@
+<bmo-select-box
+  label="Target Database Type"
+  [formControl]="form.controls.dbType"
+  [options]="targetTableType()">
+</bmo-select-box>
+
+<bmo-select-box
+  label="Target Database"
+  [formControl]="form.controls.database"
+  [options]="targetDatabase()">
+</bmo-select-box>
+
+<bmo-select-box
+  label="Target Schema"
+  [formControl]="form.controls.schema"
+  [options]="targetSchema()">
+</bmo-select-box>
