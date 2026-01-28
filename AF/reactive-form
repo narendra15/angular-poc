@@ -15,3 +15,19 @@
   [formControl]="form.controls.schema"
   [options]="targetSchema()">
 </bmo-select-box>
+
+
+
+ngOnInit() {
+  this.form.controls.dbType.valueChanges.subscribe(val => {
+    this.loadDatabases(val);
+    this.form.controls.database.enable();
+    this.form.controls.schema.reset();
+    this.form.controls.schema.disable();
+  });
+
+  this.form.controls.database.valueChanges.subscribe(val => {
+    this.loadSchemas(val);
+    this.form.controls.schema.enable();
+  });
+}
