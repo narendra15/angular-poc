@@ -1,0 +1,316 @@
+import { Component, ElementRef, OnInit, QueryList, ViewChildren, signal } from '@angular/core';
+import { FormArray, FormControl, FormGroup } from '@angular/forms';
+
+type Option = { value: string; label: string };
+
+type TargetTableFormGroup = FormGroup<{
+  dbType: FormControl<string | null>;
+  database: FormControl<string | null>;
+  schema: FormControl<string | null>;
+  targetType: FormControl<string | null>;
+}>;
+
+@Component({
+  selector: 'app-add-tables',
+  templateUrl: './add-tables.html',
+})
+export class AddTables implements OnInit {
+
+  // If you want to auto-click/focus the first dropdown of each row
+  @ViewChildren('fieldOne', { read: ElementRef }) fieldOneList!: QueryList<ElementRef>;
+
+  // Field 1 options (same for all rows, so one signal is enough)
+  targetTableType = signal<Option[]>([]);
+
+  // Per-row options (because each row can be different based on selections)
+  targetDatabaseByRow = signal<Option[][]>([]);
+  targetSchemaByRow = signal<Option[][]>([]);
+  targetTypeByRow = signal<Option[][]>([]);
+
+  // Form = FormArray of repeating groups
+  form = new FormGroup({
+    targetTables: new FormArray<TargetTableFormGroup>([])
+  });
+
+  get targetTables(): FormArray<TargetTableFormGroup> {
+    return this.form.controls.targetTables;
+  }
+
+  ngOnInit(): void {
+    // Static options (replace with API call if needed)
+    this.targetTableType.set([{ value: 'redshift', label: 'Redshift' }]);
+
+    // Create first row by default
+    this.addTargetTable();
+
+    // Optional: focus/click first dropdown of row 0
+    setTimeout(() => this.clickFieldOne(0), 100);
+  }
+
+  // ----------------------------
+  // Row management
+  // ----------------------------
+  addTargetTable(): void {
+    if (this.targetTables.length >= 5) return;
+
+    const rowIndex = this.targetTables.length;
+
+    // Ensure per-row option arrays exist
+    this.ensureRowOptionArrays(rowIndex);
+
+    const group = this.createTargetTableGroup(rowIndex);
+    this.targetTables.push(group);
+
+    // Optional: focus the first field of the newly added row
+    setTimeout(() => this.clickFieldOne(rowIndex), 100);
+  }
+
+  removeTargetTable(index: number): void {
+    this.targetTables.removeAt(index);
+
+    // Remove the corresponding row options too (keeps indexes aligned)
+    const db = [...this.targetDatabaseByRow()];
+    const sc = [...this.targetSchemaByRow()];
+    const tt = [...this.targetTypeByRow()];
+
+    db.splice(index, 1);
+    sc.splice(index, 1);
+    tt.splice(index, 1);
+
+    this.targetDatabaseByRow.set(db);
+    this.targetSchemaByRow.set(sc);
+    this.targetTypeByRow.set(tt);
+  }
+
+  // ----------------------------
+  // Group creation + dependencies
+  // ----------------------------
+  private createTargetTableGroup(rowIndex: number): TargetTableFormGroup {
+    const group: TargetTableFormGroup = new FormGroup({
+      dbType: new FormControl<string | null>(null),
+      database: new FormControl<string | null>({ value: null, disabled: true }),
+      schema: new FormControl<string | null>({ value: null, disabled: true }),
+      targetType: new FormControl<string | null>({ value: null, disabled: true }),
+    });
+
+    this.wireDependencies(group, rowIndex);
+
+    return group;
+  }
+
+  private wireDependencies(group: TargetTableFormGroup, rowIndex: number): void {
+    // When dbType changes -> populate databases, enable database, reset others
+    group.controls.dbType.valueChanges.subscribe((dbType) => {
+      group.controls.database.reset();
+      group.controls.schema.reset();
+      group.controls.targetType.reset();
+
+      group.controls.database.disable();
+      group.controls.schema.disable();
+      group.controls.targetType.disable();
+
+      this.setRowOptions(rowIndex, 'database', []);
+      this.setRowOptions(rowIndex, 'schema', []);
+      this.setRowOptions(rowIndex, 'targetType', []);
+
+      if (!dbType) return;
+
+      // Replace this with API call
+      const databases = this.getDatabasesByDbType(dbType);
+      this.setRowOptions(rowIndex, 'database', databases);
+
+      group.controls.database.enable();
+    });
+
+    // When database changes -> populate schemas, enable schema, reset targetType
+    group.controls.database.valueChanges.subscribe((database) => {
+      group.controls.schema.reset();
+      group.controls.targetType.reset();
+
+      group.controls.schema.disable();
+      group.controls.targetType.disable();
+
+      this.setRowOptions(rowIndex, 'schema', []);
+      this.setRowOptions(rowIndex, 'targetType', []);
+
+      if (!database) return;
+
+      // Replace this with API call
+      const schemas = this.getSchemasByDatabase(database);
+      this.setRowOptions(rowIndex, 'schema', schemas);
+
+      group.controls.schema.enable();
+    });
+
+    // When schema changes -> populate targetType, enable targetType
+    group.controls.schema.valueChanges.subscribe((schema) => {
+      group.controls.targetType.reset();
+      group.controls.targetType.disable();
+
+      this.setRowOptions(rowIndex, 'targetType', []);
+
+      if (!schema) return;
+
+      // Replace this with API call
+      const targetTypes = this.getTargetTypesBySchema(schema);
+      this.setRowOptions(rowIndex, 'targetType', targetTypes);
+
+      group.controls.targetType.enable();
+    });
+  }
+
+  // ----------------------------
+  // Options getters used by HTML
+  // ----------------------------
+  getDatabasesForRow(rowIndex: number): Option[] {
+    return this.targetDatabaseByRow()[rowIndex] ?? [];
+  }
+
+  getSchemasForRow(rowIndex: number): Option[] {
+    return this.targetSchemaByRow()[rowIndex] ?? [];
+  }
+
+  getTargetTypesForRow(rowIndex: number): Option[] {
+    return this.targetTypeByRow()[rowIndex] ?? [];
+  }
+
+  // ----------------------------
+  // Helpers
+  // ----------------------------
+  private ensureRowOptionArrays(rowIndex: number): void {
+    const db = [...this.targetDatabaseByRow()];
+    const sc = [...this.targetSchemaByRow()];
+    const tt = [...this.targetTypeByRow()];
+
+    db[rowIndex] ??= [];
+    sc[rowIndex] ??= [];
+    tt[rowIndex] ??= [];
+
+    this.targetDatabaseByRow.set(db);
+    this.targetSchemaByRow.set(sc);
+    this.targetTypeByRow.set(tt);
+  }
+
+  private setRowOptions(
+    rowIndex: number,
+    type: 'database' | 'schema' | 'targetType',
+    options: Option[]
+  ): void {
+    if (type === 'database') {
+      const db = [...this.targetDatabaseByRow()];
+      db[rowIndex] = options;
+      this.targetDatabaseByRow.set(db);
+      return;
+    }
+
+    if (type === 'schema') {
+      const sc = [...this.targetSchemaByRow()];
+      sc[rowIndex] = options;
+      this.targetSchemaByRow.set(sc);
+      return;
+    }
+
+    const tt = [...this.targetTypeByRow()];
+    tt[rowIndex] = options;
+    this.targetTypeByRow.set(tt);
+  }
+
+  private clickFieldOne(rowIndex: number): void {
+    const el = this.fieldOneList?.toArray?.()[rowIndex]?.nativeElement;
+    if (el?.click) el.click();
+  }
+
+  // ----------------------------
+  // Dummy data loaders (replace with API)
+  // ----------------------------
+  private getDatabasesByDbType(dbType: string): Option[] {
+    if (dbType === 'redshift') {
+      return [{ value: 'dev_11_s3_rfdh', label: 'dev_11_s3_rfdh' }];
+    }
+    return [];
+  }
+
+  private getSchemasByDatabase(database: string): Option[] {
+    if (database) {
+      return [{ value: 'bcl', label: 'bcl' }];
+    }
+    return [];
+  }
+
+  private getTargetTypesBySchema(schema: string): Option[] {
+    if (schema) {
+      return [
+        { value: 'fact', label: 'Fact' },
+        { value: 'dimention', label: 'Dimention' } // keeping your spelling
+      ];
+    }
+    return [];
+  }
+}
+
+
+
+
+
+
+
+
+///////////////////////// HTML ////////////////////////////////////
+
+<div [formGroup]="form">
+
+  <div formArrayName="targetTables">
+    @for (grp of targetTables.controls; track $index) {
+
+      <div class="option-row" [formGroupName]="$index">
+
+        <!-- Field 1 -->
+        <bmo-select-box
+          #fieldOne
+          label="Target Database Type"
+          [width]="'320px'"
+          [appearance]="'outline'"
+          [options]="targetTableType()"
+          [formControl]="grp.controls.dbType">
+        </bmo-select-box>
+
+        <!-- Field 2 -->
+        <bmo-select-box
+          label="Target Database"
+          [width]="'320px'"
+          [appearance]="'outline'"
+          [options]="getDatabasesForRow($index)"
+          [formControl]="grp.controls.database">
+        </bmo-select-box>
+
+        <!-- Field 3 -->
+        <bmo-select-box
+          label="Target Schema"
+          [width]="'320px'"
+          [appearance]="'outline'"
+          [options]="getSchemasForRow($index)"
+          [formControl]="grp.controls.schema">
+        </bmo-select-box>
+
+        <!-- Field 4 -->
+        <bmo-select-box
+          label="Target Type"
+          [width]="'320px'"
+          [appearance]="'outline'"
+          [options]="getTargetTypesForRow($index)"
+          [formControl]="grp.controls.targetType">
+        </bmo-select-box>
+
+        <button type="button" (click)="removeTargetTable($index)" *ngIf="targetTables.length > 1">
+          Remove
+        </button>
+
+      </div>
+    }
+  </div>
+
+  <button type="button" (click)="addTargetTable()" [disabled]="targetTables.length >= 5">
+    Add another target table
+  </button>
+
+</div>
