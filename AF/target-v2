@@ -1,0 +1,469 @@
+import { Component, ElementRef, EventEmitter, OnInit, Output, QueryList, ViewChildren, signal } from '@angular/core';
+import { FormArray, FormControl, FormGroup } from '@angular/forms';
+
+type Option = { value: string; label: string };
+
+// One row output payload (what we will emit to parent)
+export type TargetTableRowPayload = {
+  targetDatabaseType: string | null;
+  targetDatabase: string | null;
+  targetSchema: string | null;
+  targetTableType: string | null;
+  targetTable: string | null;
+  keyColumns: string[]; // multi select
+};
+
+type TargetTableFormGroup = FormGroup<{
+  targetDatabaseType: FormControl<string | null>;
+  targetDatabase: FormControl<string | null>;
+  targetSchema: FormControl<string | null>;
+  targetTableType: FormControl<string | null>;
+  targetTable: FormControl<string | null>;
+  keyColumns: FormControl<string[]>;
+}>;
+
+@Component({
+  selector: 'app-add-tables',
+  templateUrl: './add-tables.html',
+})
+export class AddTables implements OnInit {
+
+  @Output() saveTargetTables = new EventEmitter<TargetTableRowPayload[]>();
+
+  // optional focus/click for first dropdown per row
+  @ViewChildren('fieldOne', { read: ElementRef }) fieldOneList!: QueryList<ElementRef>;
+
+  // Options common for all rows (or can remain common)
+  targetDatabaseTypeOptions = signal<Option[]>([]);
+  targetTableTypeOptions = signal<Option[]>([]);
+
+  // Per-row options (because can differ per row)
+  targetDatabaseByRow = signal<Option[][]>([]);
+  targetSchemaByRow = signal<Option[][]>([]);
+  targetTableByRow = signal<Option[][]>([]);
+  keyColumnsByRow = signal<Option[][]>([]); // checkbox list options
+
+  form = new FormGroup({
+    targetTables: new FormArray<TargetTableFormGroup>([])
+  });
+
+  get targetTables(): FormArray<TargetTableFormGroup> {
+    return this.form.controls.targetTables;
+  }
+
+  ngOnInit(): void {
+    // Replace these with API calls if needed
+    this.targetDatabaseTypeOptions.set([{ value: 'redshift', label: 'Redshift' }]);
+
+    this.targetTableTypeOptions.set([
+      { value: 'fact', label: 'FACT' },
+      { value: 'dimension', label: 'DIMENSION' },
+    ]);
+
+    // Start with one row
+    this.addTargetTable();
+    setTimeout(() => this.clickFieldOne(0), 100);
+  }
+
+  // ----------------------------
+  // Add / remove row (max 5)
+  // ----------------------------
+  addTargetTable(): void {
+    if (this.targetTables.length >= 5) return;
+
+    const rowIndex = this.targetTables.length;
+
+    this.ensureRowOptionArrays(rowIndex);
+
+    const group = this.createTargetTableGroup(rowIndex);
+    this.targetTables.push(group);
+
+    setTimeout(() => this.clickFieldOne(rowIndex), 100);
+  }
+
+  removeTargetTable(index: number): void {
+    this.targetTables.removeAt(index);
+
+    // keep option arrays aligned to indexes
+    this.spliceRowOptions(index);
+  }
+
+  // ----------------------------
+  // Create group
+  // ----------------------------
+  private createTargetTableGroup(rowIndex: number): TargetTableFormGroup {
+    const group: TargetTableFormGroup = new FormGroup({
+      targetDatabaseType: new FormControl<string | null>(null),
+
+      targetDatabase: new FormControl<string | null>({ value: null, disabled: true }),
+      targetSchema: new FormControl<string | null>({ value: null, disabled: true }),
+      targetTableType: new FormControl<string | null>({ value: null, disabled: true }),
+      targetTable: new FormControl<string | null>({ value: null, disabled: true }),
+      keyColumns: new FormControl<string[]>([]) // enabled last
+    });
+
+    // Disable keyColumns initially (until targetTable chosen)
+    group.controls.keyColumns.disable();
+
+    this.wireDependencies(group, rowIndex);
+
+    return group;
+  }
+
+  // ----------------------------
+  // Dependency wiring (row-specific)
+  // ----------------------------
+  private wireDependencies(group: TargetTableFormGroup, rowIndex: number): void {
+
+    // 1) targetDatabaseType -> loads databases
+    group.controls.targetDatabaseType.valueChanges.subscribe((dbType) => {
+      this.resetDownstream(group, rowIndex, ['targetDatabase', 'targetSchema', 'targetTableType', 'targetTable', 'keyColumns']);
+
+      if (!dbType) return;
+
+      const databases = this.getDatabasesByDbType(dbType);
+      this.setRowOptions(rowIndex, 'database', databases);
+
+      group.controls.targetDatabase.enable();
+    });
+
+    // 2) targetDatabase -> loads schemas
+    group.controls.targetDatabase.valueChanges.subscribe((database) => {
+      this.resetDownstream(group, rowIndex, ['targetSchema', 'targetTableType', 'targetTable', 'keyColumns']);
+
+      if (!database) return;
+
+      const schemas = this.getSchemasByDatabase(database);
+      this.setRowOptions(rowIndex, 'schema', schemas);
+
+      group.controls.targetSchema.enable();
+    });
+
+    // 3) targetSchema -> enables tableType (and optionally loads table list depending on your API)
+    group.controls.targetSchema.valueChanges.subscribe((schema) => {
+      this.resetDownstream(group, rowIndex, ['targetTableType', 'targetTable', 'keyColumns']);
+
+      if (!schema) return;
+
+      group.controls.targetTableType.enable();
+    });
+
+    // 4) targetTableType -> loads tables (depends on schema + type)
+    group.controls.targetTableType.valueChanges.subscribe((tableType) => {
+      this.resetDownstream(group, rowIndex, ['targetTable', 'keyColumns']);
+
+      const schema = group.controls.targetSchema.value;
+      if (!schema || !tableType) return;
+
+      const tables = this.getTablesBySchemaAndType(schema, tableType);
+      this.setRowOptions(rowIndex, 'table', tables);
+
+      group.controls.targetTable.enable();
+    });
+
+    // 5) targetTable -> loads key columns options
+    group.controls.targetTable.valueChanges.subscribe((table) => {
+      // reset key columns
+      group.controls.keyColumns.setValue([]);
+      group.controls.keyColumns.disable();
+      this.setRowOptions(rowIndex, 'keyColumns', []);
+
+      const schema = group.controls.targetSchema.value;
+      if (!schema || !table) return;
+
+      const cols = this.getKeyColumnsBySchemaAndTable(schema, table);
+      this.setRowOptions(rowIndex, 'keyColumns', cols);
+
+      group.controls.keyColumns.enable();
+    });
+  }
+
+  // ----------------------------
+  // UI getters for options per row
+  // ----------------------------
+  getDatabasesForRow(rowIndex: number): Option[] {
+    return this.targetDatabaseByRow()[rowIndex] ?? [];
+  }
+
+  getSchemasForRow(rowIndex: number): Option[] {
+    return this.targetSchemaByRow()[rowIndex] ?? [];
+  }
+
+  getTablesForRow(rowIndex: number): Option[] {
+    return this.targetTableByRow()[rowIndex] ?? [];
+  }
+
+  getKeyColumnsForRow(rowIndex: number): Option[] {
+    return this.keyColumnsByRow()[rowIndex] ?? [];
+  }
+
+  // ----------------------------
+  // Key columns selection (checkboxes)
+  // ----------------------------
+  toggleKeyColumn(rowIndex: number, colValue: string, checked: boolean): void {
+    const grp = this.targetTables.at(rowIndex);
+    const current = grp.controls.keyColumns.value ?? [];
+
+    const next = checked
+      ? Array.from(new Set([...current, colValue]))
+      : current.filter(x => x !== colValue);
+
+    grp.controls.keyColumns.setValue(next);
+    grp.controls.keyColumns.markAsDirty();
+  }
+
+  isKeyColumnSelected(rowIndex: number, colValue: string): boolean {
+    const grp = this.targetTables.at(rowIndex);
+    return (grp.controls.keyColumns.value ?? []).includes(colValue);
+  }
+
+  // ----------------------------
+  // Save / Emit to parent
+  // ----------------------------
+  onSave(): void {
+    // getRawValue includes disabled controls values too
+    const rowsRaw = this.targetTables.getRawValue();
+
+    const payload: TargetTableRowPayload[] = rowsRaw.map(r => ({
+      targetDatabaseType: r.targetDatabaseType,
+      targetDatabase: r.targetDatabase,
+      targetSchema: r.targetSchema,
+      targetTableType: r.targetTableType,
+      targetTable: r.targetTable,
+      keyColumns: r.keyColumns ?? [],
+    }));
+
+    this.saveTargetTables.emit(payload);
+  }
+
+  // ----------------------------
+  // Helpers
+  // ----------------------------
+  private resetDownstream(
+    group: TargetTableFormGroup,
+    rowIndex: number,
+    fields: Array<keyof TargetTableFormGroup['controls']>
+  ): void {
+    // reset + disable everything downstream
+    for (const f of fields) {
+      group.controls[f].reset();
+
+      // keep keyColumns as array, not null
+      if (f === 'keyColumns') {
+        group.controls.keyColumns.setValue([]);
+      }
+
+      group.controls[f].disable();
+    }
+
+    // also clear row option lists downstream
+    // based on what’s being reset
+    if (fields.includes('targetDatabase')) this.setRowOptions(rowIndex, 'database', []);
+    if (fields.includes('targetSchema')) this.setRowOptions(rowIndex, 'schema', []);
+    if (fields.includes('targetTable')) this.setRowOptions(rowIndex, 'table', []);
+    if (fields.includes('keyColumns')) this.setRowOptions(rowIndex, 'keyColumns', []);
+  }
+
+  private ensureRowOptionArrays(rowIndex: number): void {
+    const db = [...this.targetDatabaseByRow()];
+    const sc = [...this.targetSchemaByRow()];
+    const tb = [...this.targetTableByRow()];
+    const kc = [...this.keyColumnsByRow()];
+
+    db[rowIndex] ??= [];
+    sc[rowIndex] ??= [];
+    tb[rowIndex] ??= [];
+    kc[rowIndex] ??= [];
+
+    this.targetDatabaseByRow.set(db);
+    this.targetSchemaByRow.set(sc);
+    this.targetTableByRow.set(tb);
+    this.keyColumnsByRow.set(kc);
+  }
+
+  private spliceRowOptions(index: number): void {
+    const db = [...this.targetDatabaseByRow()];
+    const sc = [...this.targetSchemaByRow()];
+    const tb = [...this.targetTableByRow()];
+    const kc = [...this.keyColumnsByRow()];
+
+    db.splice(index, 1);
+    sc.splice(index, 1);
+    tb.splice(index, 1);
+    kc.splice(index, 1);
+
+    this.targetDatabaseByRow.set(db);
+    this.targetSchemaByRow.set(sc);
+    this.targetTableByRow.set(tb);
+    this.keyColumnsByRow.set(kc);
+  }
+
+  private setRowOptions(
+    rowIndex: number,
+    type: 'database' | 'schema' | 'table' | 'keyColumns',
+    options: Option[]
+  ): void {
+    if (type === 'database') {
+      const db = [...this.targetDatabaseByRow()];
+      db[rowIndex] = options;
+      this.targetDatabaseByRow.set(db);
+      return;
+    }
+    if (type === 'schema') {
+      const sc = [...this.targetSchemaByRow()];
+      sc[rowIndex] = options;
+      this.targetSchemaByRow.set(sc);
+      return;
+    }
+    if (type === 'table') {
+      const tb = [...this.targetTableByRow()];
+      tb[rowIndex] = options;
+      this.targetTableByRow.set(tb);
+      return;
+    }
+
+    const kc = [...this.keyColumnsByRow()];
+    kc[rowIndex] = options;
+    this.keyColumnsByRow.set(kc);
+  }
+
+  private clickFieldOne(rowIndex: number): void {
+    const el = this.fieldOneList?.toArray?.()[rowIndex]?.nativeElement;
+    if (el?.click) el.click();
+  }
+
+  // ----------------------------
+  // Dummy data (replace with API calls)
+  // ----------------------------
+  private getDatabasesByDbType(dbType: string): Option[] {
+    if (dbType === 'redshift') {
+      return [{ value: 'dev_11_s3_rfdh', label: 'dev_11_s3_rfdh' }];
+    }
+    return [];
+  }
+
+  private getSchemasByDatabase(database: string): Option[] {
+    if (database) return [{ value: 'bcl', label: 'bcl' }];
+    return [];
+  }
+
+  private getTablesBySchemaAndType(schema: string, tableType: string): Option[] {
+    // Example only
+    if (schema === 'bcl' && tableType === 'fact') {
+      return [{ value: 'bcl_cv', label: 'bcl_cv' }];
+    }
+    return [];
+  }
+
+  private getKeyColumnsBySchemaAndTable(schema: string, table: string): Option[] {
+    // Example only
+    if (schema === 'bcl' && table === 'bcl_cv') {
+      return [
+        { value: 'cl_cd', label: 'cl_cd' },
+        { value: 'cl_scm_id', label: 'cl_scm_id' },
+        { value: 'grp_cl_id', label: 'grp_cl_id' },
+        { value: 'cl_scm_seq_nbr', label: 'cl_scm_seq_nbr' },
+        { value: 'shrt_nm', label: 'shrt_nm' },
+      ];
+    }
+    return [];
+  }
+}
+
+
+
+
+////////////////////////////// HTML /////////////////////////////////////////
+
+<div [formGroup]="form">
+
+  <div formArrayName="targetTables">
+    @for (grp of targetTables.controls; track $index) {
+
+      <div class="option-row" [formGroupName]="$index">
+
+        <!-- 1) Target Database Type -->
+        <bmo-select-box
+          #fieldOne
+          label="Target Database Type"
+          [width]="'320px'"
+          [appearance]="'outline'"
+          [options]="targetDatabaseTypeOptions()"
+          [internalControl]="grp.controls.targetDatabaseType">
+        </bmo-select-box>
+
+        <!-- 2) Target Database -->
+        <bmo-select-box
+          label="Target Database"
+          [width]="'320px'"
+          [appearance]="'outline'"
+          [options]="getDatabasesForRow($index)"
+          [internalControl]="grp.controls.targetDatabase">
+        </bmo-select-box>
+
+        <!-- 3) Target Schema -->
+        <bmo-select-box
+          label="Target Schema"
+          [width]="'320px'"
+          [appearance]="'outline'"
+          [options]="getSchemasForRow($index)"
+          [internalControl]="grp.controls.targetSchema">
+        </bmo-select-box>
+
+        <!-- 4) Target Table Type -->
+        <bmo-select-box
+          label="Target Table Type"
+          [width]="'320px'"
+          [appearance]="'outline'"
+          [options]="targetTableTypeOptions()"
+          [internalControl]="grp.controls.targetTableType">
+        </bmo-select-box>
+
+        <!-- 5) Target Table -->
+        <bmo-select-box
+          label="Target Table"
+          [width]="'320px'"
+          [appearance]="'outline'"
+          [options]="getTablesForRow($index)"
+          [internalControl]="grp.controls.targetTable">
+        </bmo-select-box>
+
+        <!-- 6) Key Columns (multi-select checkbox list) -->
+        <div class="key-columns">
+          <div class="key-columns-label">Key Columns</div>
+
+          <!-- Example UI (replace with your own dropdown / overlay if you have one) -->
+          <div class="key-columns-list" [class.disabled]="grp.controls.keyColumns.disabled">
+            @for (col of getKeyColumnsForRow($index); track col.value) {
+              <label class="key-col-item">
+                <input
+                  type="checkbox"
+                  [disabled]="grp.controls.keyColumns.disabled"
+                  [checked]="isKeyColumnSelected($index, col.value)"
+                  (change)="toggleKeyColumn($index, col.value, $any($event.target).checked)"
+                />
+                {{ col.label }}
+              </label>
+            }
+          </div>
+        </div>
+
+        <button type="button" (click)="removeTargetTable($index)" *ngIf="targetTables.length > 1">
+          Remove
+        </button>
+
+      </div>
+    }
+  </div>
+
+  <div class="actions">
+    <button type="button" (click)="addTargetTable()" [disabled]="targetTables.length >= 5">
+      Add another target table
+    </button>
+
+    <button type="button" (click)="onSave()">
+      Save
+    </button>
+  </div>
+
+</div>
