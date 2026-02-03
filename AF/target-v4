@@ -1,0 +1,496 @@
+import {
+  Component,
+  DestroyRef,
+  EventEmitter,
+  Input,
+  OnChanges,
+  OnInit,
+  Output,
+  SimpleChanges,
+  inject,
+  signal,
+} from '@angular/core';
+import { FormControl, FormGroup } from '@angular/forms';
+import { combineLatest, of } from 'rxjs';
+import {
+  catchError,
+  distinctUntilChanged,
+  filter,
+  map,
+  startWith,
+  switchMap,
+  tap,
+} from 'rxjs/operators';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+
+// ---- Types ----
+export type Option = { value: string; label: string };
+
+type MetadataResp = {
+  status: boolean;
+  message: string;
+  data: any[];
+};
+
+export type TargetTableDraftPayload = {
+  targetDatabaseType: string | null;
+  targetDatabase: string | null;
+  targetSchema: string | null;
+  targetTableType: string | null;
+  targetTable: string | null;
+  keyColumns: string[];
+};
+
+export type TargetTableSavedRow = TargetTableDraftPayload & {
+  id?: string;
+};
+
+// ---- IMPORTANT ----
+// Replace this with the actual type of your existing API service if you have it.
+// The only method we use is: getData(endpoint: string, params?: any): Observable<any>
+interface ApiServiceLike {
+  getData(endpoint: string, params?: Record<string, any>): any; // Observable<MetadataResp>
+}
+
+@Component({
+  selector: 'app-add-tables',
+  templateUrl: './add-tables.html',
+})
+export class AddTables implements OnInit, OnChanges {
+  private destroyRef = inject(DestroyRef);
+
+  // Parent-controlled inputs
+  @Input() isEditMode = true; // true => draft editable
+  @Input() savedTargetTables: TargetTableSavedRow[] = [];
+
+  // Outputs
+  @Output() saveDraft = new EventEmitter<TargetTableDraftPayload>();
+  @Output() addAnother = new EventEmitter<void>();
+
+  // Inject your existing API service
+  constructor(private _apiService: ApiServiceLike) {}
+
+  // Static options
+  targetDatabaseTypeOptions = signal<Option[]>([
+    { value: 'redshift', label: 'Redshift' },
+  ]);
+
+  targetTableTypeOptions = signal<Option[]>([
+    { value: 'fact', label: 'FACT' },
+    { value: 'dimension', label: 'DIMENSION' },
+  ]);
+
+  // Dynamic options (draft only)
+  targetDatabaseOptions = signal<Option[]>([]);
+  targetSchemaOptions = signal<Option[]>([]);
+  targetTableOptions = signal<Option[]>([]);
+  keyColumnsOptions = signal<Option[]>([]);
+
+  // Draft form (single)
+  draftForm = new FormGroup({
+    targetDatabaseType: new FormControl<string | null>(null),
+    targetDatabase: new FormControl<string | null>({ value: null, disabled: true }),
+    targetSchema: new FormControl<string | null>({ value: null, disabled: true }),
+    targetTableType: new FormControl<string | null>({ value: null, disabled: true }),
+    targetTable: new FormControl<string | null>({ value: null, disabled: true }),
+    keyColumns: new FormControl<string[]>([], { nonNullable: true }),
+  });
+
+  // -----------------------------
+  // UI computed helpers
+  // -----------------------------
+  get nextTableNumber(): number {
+    return (this.savedTargetTables?.length ?? 0) + 1;
+  }
+
+  get canAddAnother(): boolean {
+    return !this.isEditMode && (this.savedTargetTables?.length ?? 0) < 5;
+  }
+
+  get canSave(): boolean {
+    return this.isEditMode && this.draftForm.enabled;
+  }
+
+  // -----------------------------
+  // Lifecycle
+  // -----------------------------
+  ngOnInit(): void {
+    // Always wire dependencies once
+    this.wireDraftDependencies();
+
+    if (this.isEditMode) {
+      this.resetDraftToInitial();
+    } else {
+      this.disableDraftCompletely();
+    }
+  }
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['isEditMode']) {
+      if (this.isEditMode) {
+        this.resetDraftToInitial();
+      } else {
+        this.disableDraftCompletely();
+      }
+    }
+  }
+
+  // -----------------------------
+  // Button actions
+  // -----------------------------
+  onClickAddAnother(): void {
+    if (!this.canAddAnother) return;
+    this.addAnother.emit(); // parent sets isEditMode=true
+  }
+
+  onClickSave(): void {
+    if (!this.canSave) return;
+
+    const raw = this.draftForm.getRawValue();
+
+    const payload: TargetTableDraftPayload = {
+      targetDatabaseType: raw.targetDatabaseType,
+      targetDatabase: raw.targetDatabase,
+      targetSchema: raw.targetSchema,
+      targetTableType: raw.targetTableType,
+      targetTable: raw.targetTable,
+      keyColumns: raw.keyColumns ?? [],
+    };
+
+    this.saveDraft.emit(payload);
+  }
+
+  // -----------------------------
+  // Dependency wiring (draft only)
+  // -----------------------------
+  private wireDraftDependencies(): void {
+    const c = this.draftForm.controls;
+
+    // 1) DB Type -> Databases (type=database)
+    c.targetDatabaseType.valueChanges
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        distinctUntilChanged(),
+        tap(() => this.resetFrom('targetDatabase')),
+        filter((v): v is string => !!v),
+        switchMap(() =>
+          this._apiService
+            .getData('target-table/metadata', { type: 'database' })
+            .pipe(
+              map((resp: MetadataResp) => this.mapDatabaseOptions(resp)),
+              catchError(() => of([]))
+            )
+        )
+      )
+      .subscribe((dbOptions: Option[]) => {
+        this.targetDatabaseOptions.set(dbOptions);
+        c.targetDatabase.enable();
+      });
+
+    // 2) Database -> Schemas (type=schema)
+    c.targetDatabase.valueChanges
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        distinctUntilChanged(),
+        tap(() => this.resetFrom('targetSchema')),
+        filter((db): db is string => !!db),
+        switchMap((db) =>
+          this._apiService
+            .getData('target-table/metadata', {
+              database_name: db,
+              type: 'schema',
+            })
+            .pipe(
+              map((resp: MetadataResp) => this.mapSchemaOptions(resp)),
+              catchError(() => of([]))
+            )
+        )
+      )
+      .subscribe((schemaOptions: Option[]) => {
+        this.targetSchemaOptions.set(schemaOptions);
+        c.targetSchema.enable();
+      });
+
+    // 3) Schema -> enable Table Type (static)
+    c.targetSchema.valueChanges
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        distinctUntilChanged(),
+        tap(() => this.resetFrom('targetTableType')),
+        filter((schema): schema is string => !!schema)
+      )
+      .subscribe(() => {
+        c.targetTableType.enable();
+      });
+
+    // 4) (Schema + TableType) -> Tables (type=table)
+    combineLatest([
+      c.targetSchema.valueChanges.pipe(startWith(c.targetSchema.value)),
+      c.targetTableType.valueChanges.pipe(startWith(c.targetTableType.value)),
+    ])
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        tap(() => this.resetFrom('targetTable')),
+        filter(([schema, tt]) => !!schema && !!tt),
+        switchMap(([schema]) => {
+          const db = c.targetDatabase.value;
+          if (!db) return of([]);
+
+          return this._apiService
+            .getData('target-table/metadata', {
+              database_name: db,
+              schema_name: schema,
+              type: 'table',
+              // If backend supports table_type filtering later, just add:
+              // table_type: c.targetTableType.value
+            })
+            .pipe(
+              map((resp: MetadataResp) => this.mapTableOptions(resp)),
+              catchError(() => of([]))
+            );
+        })
+      )
+      .subscribe((tableOptions: Option[]) => {
+        this.targetTableOptions.set(tableOptions);
+        c.targetTable.enable();
+      });
+
+    // 5) Table -> Key Columns (type=column)
+    c.targetTable.valueChanges
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        distinctUntilChanged(),
+        tap(() => {
+          c.keyColumns.setValue([]);
+          c.keyColumns.disable();
+          this.keyColumnsOptions.set([]);
+        }),
+        filter((table): table is string => !!table),
+        switchMap((table) => {
+          const db = c.targetDatabase.value;
+          const schema = c.targetSchema.value;
+          if (!db || !schema) return of([]);
+
+          return this._apiService
+            .getData('target-table/metadata', {
+              database_name: db,
+              schema_name: schema,
+              table_name: table,
+              type: 'column',
+            })
+            .pipe(
+              map((resp: MetadataResp) => this.mapColumnOptions(resp)),
+              catchError(() => of([]))
+            );
+        })
+      )
+      .subscribe((colOptions: Option[]) => {
+        this.keyColumnsOptions.set(colOptions);
+        c.keyColumns.enable();
+      });
+  }
+
+  /**
+   * Reset downstream controls + option lists from a given field.
+   * This prevents buggy states when user changes earlier dropdowns.
+   */
+  private resetFrom(
+    start: 'targetDatabase' | 'targetSchema' | 'targetTableType' | 'targetTable'
+  ): void {
+    const c = this.draftForm.controls;
+
+    const order = [
+      'targetDatabase',
+      'targetSchema',
+      'targetTableType',
+      'targetTable',
+      'keyColumns',
+    ] as const;
+
+    const startIdx = order.indexOf(start);
+
+    for (const key of order.slice(startIdx)) {
+      if (key === 'keyColumns') {
+        c.keyColumns.setValue([]);
+      } else {
+        (c[key] as any).setValue(null);
+      }
+      c[key].disable();
+    }
+
+    // Clear downstream options
+    if (startIdx <= 0) this.targetDatabaseOptions.set([]);
+    if (startIdx <= 1) this.targetSchemaOptions.set([]);
+    if (startIdx <= 3) this.targetTableOptions.set([]);
+    this.keyColumnsOptions.set([]);
+  }
+
+  private resetDraftToInitial(): void {
+    const c = this.draftForm.controls;
+
+    // Reset values
+    this.draftForm.reset();
+    this.draftForm.enable({ emitEvent: false });
+
+    // Initial disables
+    c.targetDatabase.disable({ emitEvent: false });
+    c.targetSchema.disable({ emitEvent: false });
+    c.targetTableType.disable({ emitEvent: false });
+    c.targetTable.disable({ emitEvent: false });
+    c.keyColumns.setValue([]);
+    c.keyColumns.disable({ emitEvent: false });
+
+    // Clear dynamic options
+    this.targetDatabaseOptions.set([]);
+    this.targetSchemaOptions.set([]);
+    this.targetTableOptions.set([]);
+    this.keyColumnsOptions.set([]);
+
+    // Auto select fixed DB Type = redshift, trigger database fetch
+    c.targetDatabaseType.setValue('redshift', { emitEvent: true });
+  }
+
+  private disableDraftCompletely(): void {
+    this.draftForm.disable({ emitEvent: false });
+  }
+
+  // -----------------------------
+  // Response mappers (based on Postman)
+  // -----------------------------
+  private mapDatabaseOptions(resp: MetadataResp): Option[] {
+    const rows = resp?.data ?? [];
+    return rows
+      .map((r) => r?.database_name)
+      .filter((v): v is string => !!v)
+      .map((v) => ({ value: v, label: v }));
+  }
+
+  private mapSchemaOptions(resp: MetadataResp): Option[] {
+    const rows = resp?.data ?? [];
+    return rows
+      .map((r) => r?.schema_name)
+      .filter((v): v is string => !!v)
+      .map((v) => ({ value: v, label: v }));
+  }
+
+  private mapTableOptions(resp: MetadataResp): Option[] {
+    const rows = resp?.data ?? [];
+    return rows
+      .map((r) => r?.table_name)
+      .filter((v): v is string => !!v)
+      .map((v) => ({ value: v, label: v }));
+  }
+
+  private mapColumnOptions(resp: MetadataResp): Option[] {
+    const rows = resp?.data ?? [];
+    return rows
+      .map((r) => r?.column_name)
+      .filter((v): v is string => !!v)
+      .map((v) => ({ value: v, label: v }));
+  }
+}
+
+
+
+
+
+//////////////////// HTML ////////////////////////////
+
+
+<!-- SAVED TABLES (read-only) -->
+<div class="saved-section" *ngIf="savedTargetTables?.length">
+
+  @for (row of savedTargetTables; track $index; let i = $index) {
+    <div class="saved-row">
+
+      <div class="table-title">Table {{ i + 1 }}</div>
+
+      <div class="saved-grid">
+        <div><strong>Target Database Type:</strong> {{ row.targetDatabaseType || '-' }}</div>
+        <div><strong>Target Database:</strong> {{ row.targetDatabase || '-' }}</div>
+        <div><strong>Target Schema:</strong> {{ row.targetSchema || '-' }}</div>
+        <div><strong>Target Table Type:</strong> {{ row.targetTableType || '-' }}</div>
+        <div><strong>Target Table:</strong> {{ row.targetTable || '-' }}</div>
+        <div><strong>Key Columns:</strong> {{ (row.keyColumns || []).join(', ') || '-' }}</div>
+      </div>
+
+    </div>
+  }
+</div>
+
+<!-- DRAFT EDITOR (single, editable) -->
+<div class="draft-section" *ngIf="isEditMode">
+
+  <div class="table-title">Table {{ nextTableNumber }}</div>
+
+  <div [formGroup]="draftForm" class="option-row">
+
+    <!-- 1) Target Database Type (static) -->
+    <bmo-select-box
+      label="Target Database Type"
+      [width]="'320px'"
+      [appearance]="'outline'"
+      [options]="targetDatabaseTypeOptions()"
+      [internalControl]="draftForm.controls.targetDatabaseType">
+    </bmo-select-box>
+
+    <!-- 2) Target Database (API: type=database) -->
+    <bmo-select-box
+      label="Target Database"
+      [width]="'320px'"
+      [appearance]="'outline'"
+      [options]="targetDatabaseOptions()"
+      [internalControl]="draftForm.controls.targetDatabase">
+    </bmo-select-box>
+
+    <!-- 3) Target Schema (API: type=schema) -->
+    <bmo-select-box
+      label="Target Schema"
+      [width]="'320px'"
+      [appearance]="'outline'"
+      [options]="targetSchemaOptions()"
+      [internalControl]="draftForm.controls.targetSchema">
+    </bmo-select-box>
+
+    <!-- 4) Target Table Type (static) -->
+    <bmo-select-box
+      label="Target Table Type"
+      [width]="'320px'"
+      [appearance]="'outline'"
+      [options]="targetTableTypeOptions()"
+      [internalControl]="draftForm.controls.targetTableType">
+    </bmo-select-box>
+
+    <!-- 5) Target Table (API: type=table) -->
+    <bmo-select-box
+      label="Target Table"
+      [width]="'320px'"
+      [appearance]="'outline'"
+      [options]="targetTableOptions()"
+      [internalControl]="draftForm.controls.targetTable">
+    </bmo-select-box>
+
+    <!-- 6) Key Columns (API: type=column) -->
+    <mat-form-field appearance="outline" style="width: 320px;">
+      <mat-label>Key Columns</mat-label>
+
+      <mat-select multiple [formControl]="draftForm.controls.keyColumns">
+        @for (col of keyColumnsOptions(); track col.value) {
+          <mat-option [value]="col.value">{{ col.label }}</mat-option>
+        }
+      </mat-select>
+    </mat-form-field>
+
+  </div>
+</div>
+
+<!-- ACTIONS -->
+<div class="actions">
+  <button type="button" (click)="onClickAddAnother()" [disabled]="!canAddAnother">
+    Add another
+  </button>
+
+  <button type="button" (click)="onClickSave()" [disabled]="!canSave">
+    Save
+  </button>
+</div>
