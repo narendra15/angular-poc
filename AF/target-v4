@@ -494,3 +494,59 @@ export class AddTables implements OnInit, OnChanges {
     Save
   </button>
 </div>
+
+
+
+
+////////////////////////////////////////
+
+
+private buildComboKey(x: {
+  targetDatabaseType: string | null;
+  targetDatabase: string | null;
+  targetSchema: string | null;
+  targetTable: string | null;
+}): string {
+  const norm = (v: string | null) => (v ?? '').trim().toLowerCase();
+  return [
+    norm(x.targetDatabaseType),
+    norm(x.targetDatabase),
+    norm(x.targetSchema),
+    norm(x.targetTable),
+  ].join('|');
+}
+
+
+
+
+
+
+-----
+
+
+duplicateErrorMsg = ''; // bind this in UI (toast/snackbar/banner)
+
+onSaveDraft(payload: TargetTableDraftPayload) {
+  this.duplicateErrorMsg = '';
+
+  const newKey = this.buildComboKey(payload);
+
+  const exists = this.savedTargetTables.some((row) => {
+    const rowKey = this.buildComboKey(row);
+    return rowKey === newKey;
+  });
+
+  if (exists) {
+    this.duplicateErrorMsg =
+      'This Target Table combination is already added. Please choose a different Database/Schema/Table.';
+    return; // stop here (no POST, no save)
+  }
+
+  // ✅ OK -> proceed (for now fake save)
+  this.savedTargetTables = [
+    ...this.savedTargetTables,
+    { ...payload, id: crypto?.randomUUID?.() ?? `${Date.now()}` },
+  ];
+
+  this.isEditMode = false;
+}
