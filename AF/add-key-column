@@ -1,0 +1,212 @@
+import { Component, Input, Output, EventEmitter, OnInit } from '@angular/core';
+
+interface KeyColumnRow {
+  index: number;
+  values: Record<string, string>;
+  isDraft: boolean;
+}
+
+@Component({
+  selector: 'app-add-key-column',
+  templateUrl: './add-key-column.component.html',
+  standalone: true
+})
+export class AddKeyColumnComponent implements OnInit {
+
+  /* ---------------- Parent data ---------------- */
+  @Input() existingMappings: { mappings: Record<string, string> }[] = [];
+
+  @Output() saveMapping = new EventEmitter<{
+    rowIndex: number;
+    mappings: Record<string, string>;
+  }>();
+
+  /* ---------------- Internal state ---------------- */
+  referenceMap!: Record<string, string[]>;
+  dynamicColumns: string[] = [];
+  displayedColumns: string[] = [];
+
+  rows: KeyColumnRow[] = [];
+  canAdd = true;
+  maxRows = 10;
+  isLoading = true;
+
+  constructor(
+    // replace with your actual API service
+    // private apiService: KeyColumnApiService
+  ) {}
+
+  ngOnInit(): void {
+    this.loadReferenceMap();
+  }
+
+  /* ---------------- API ---------------- */
+
+  loadReferenceMap(): void {
+    // MOCK – replace with real API call
+    // this.apiService.getKeyColumnReference().subscribe(res => { ... })
+
+    const mockResponse = {
+      bcl_cv: ['ca_ab_non', 'ca_cb_non'],
+      bcv_lv: ['lv_ab_non', 'lv_cb_non']
+    };
+
+    this.referenceMap = mockResponse;
+    this.dynamicColumns = Object.keys(this.referenceMap);
+    this.displayedColumns = ['targetTable', ...this.dynamicColumns, 'actions'];
+
+    this.buildExistingRows();
+    this.isLoading = false;
+  }
+
+  /* ---------------- Existing rows ---------------- */
+
+  buildExistingRows(): void {
+    this.rows = this.existingMappings.map((item, i) => ({
+      index: i + 1,
+      values: item.mappings,
+      isDraft: false
+    }));
+  }
+
+  /* ---------------- Add draft row ---------------- */
+
+  addDraftRow(): void {
+    if (!this.canAdd || this.rows.length >= this.maxRows) {
+      return;
+    }
+
+    this.rows.push({
+      index: this.rows.length + 1,
+      values: {},
+      isDraft: true
+    });
+
+    this.canAdd = false;
+  }
+
+  /* ---------------- Save ---------------- */
+
+  saveRow(row: KeyColumnRow): void {
+    row.isDraft = false;
+
+    this.saveMapping.emit({
+      rowIndex: row.index,
+      mappings: row.values
+    });
+
+    this.canAdd = true;
+  }
+
+  /* ---------------- Cancel ---------------- */
+
+  cancelRow(rowIndex: number): void {
+    this.rows = this.rows.filter(r => r.index !== rowIndex);
+    this.canAdd = true;
+  }
+
+  /* ---------------- Dropdown logic ---------------- */
+
+  getAvailableOptions(columnKey: string): string[] {
+    const usedValues = this.rows
+      .filter(r => !r.isDraft)
+      .map(r => r.values[columnKey])
+      .filter(Boolean);
+
+    return this.referenceMap[columnKey]
+      .filter(opt => !usedValues.includes(opt));
+  }
+
+  isSaveDisabled(row: KeyColumnRow): boolean {
+    return this.dynamicColumns.some(col => !row.values[col]);
+  }
+}
+
+
+/////////////// HTML ////////////////////
+
+<div *ngIf="!isLoading; else loading">
+
+  <table mat-table [dataSource]="rows" class="mat-elevation-z1">
+
+    <!-- Target Table -->
+    <ng-container matColumnDef="targetTable">
+      <th mat-header-cell *matHeaderCellDef>
+        Target Tables
+      </th>
+      <td mat-cell *matCellDef="let row">
+        Key Mapping {{ row.index }}
+      </td>
+    </ng-container>
+
+    <!-- Dynamic Columns -->
+    <ng-container
+      *ngFor="let col of dynamicColumns"
+      [matColumnDef]="col">
+
+      <th mat-header-cell *matHeaderCellDef>
+        {{ col }}
+      </th>
+
+      <td mat-cell *matCellDef="let row">
+        <!-- Draft -->
+        <ng-container *ngIf="row.isDraft; else readOnly">
+          <bmo-select
+            [options]="getAvailableOptions(col)"
+            [(ngModel)]="row.values[col]"
+            placeholder="Select">
+          </bmo-select>
+        </ng-container>
+
+        <!-- Read only -->
+        <ng-template #readOnly>
+          {{ row.values[col] }}
+        </ng-template>
+      </td>
+    </ng-container>
+
+    <!-- Actions -->
+    <ng-container matColumnDef="actions">
+      <th mat-header-cell *matHeaderCellDef></th>
+
+      <td mat-cell *matCellDef="let row">
+        <ng-container *ngIf="row.isDraft">
+          <button
+            mat-button
+            color="primary"
+            (click)="saveRow(row)"
+            [disabled]="isSaveDisabled(row)">
+            Save
+          </button>
+
+          <button
+            mat-button
+            color="warn"
+            (click)="cancelRow(row.index)">
+            Cancel
+          </button>
+        </ng-container>
+      </td>
+    </ng-container>
+
+    <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
+    <tr mat-row *matRowDef="let row; columns: displayedColumns"></tr>
+
+  </table>
+
+  <!-- Add another -->
+  <div style="margin-top: 16px">
+    <button
+      mat-raised-button
+      color="primary"
+      (click)="addDraftRow()"
+      [disabled]="!canAdd || rows.length >= maxRows">
+      Add another
+    </button>
+  </div>
+
+</div>
+
+<ng-template #loading>
+  <mat-spinner diameter="32"></mat-spinner>
+</ng-template>
