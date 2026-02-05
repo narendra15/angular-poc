@@ -210,3 +210,30 @@ export class AddKeyColumnComponent implements OnInit {
 <ng-template #loading>
   <mat-spinner diameter="32"></mat-spinner>
 </ng-template>
+
+
+
+
+/////////
+
+
+
+cancelRow(rowIndex: number): void {
+  this.rows = this.rows.filter(r => r.index !== rowIndex);
+
+  // Re-index rows
+  this.rows = this.rows.map((r, i) => ({
+    ...r,
+    index: i + 1
+  }));
+
+  // If no rows left, auto-create first draft
+  if (this.rows.length === 0) {
+    this.addDraftRow();
+    return;
+  }
+
+  // Otherwise just allow adding
+  this.canAdd = true;
+}
+
