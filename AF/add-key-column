@@ -219,21 +219,22 @@ export class AddKeyColumnComponent implements OnInit {
 
 
 cancelRow(rowIndex: number): void {
+  // Remove the row
   this.rows = this.rows.filter(r => r.index !== rowIndex);
 
-  // Re-index rows
+  // Re-index remaining rows
   this.rows = this.rows.map((r, i) => ({
     ...r,
     index: i + 1
   }));
 
-  // If no rows left, auto-create first draft
+  // IMPORTANT: reset canAdd FIRST
+  this.canAdd = true;
+
+  // If nothing left, auto-create initial draft row
   if (this.rows.length === 0) {
     this.addDraftRow();
     return;
   }
-
-  // Otherwise just allow adding
-  this.canAdd = true;
 }
 
