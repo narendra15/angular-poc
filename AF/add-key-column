@@ -238,3 +238,14 @@ cancelRow(rowIndex: number): void {
   }
 }
 
+
+
+
+cancelRow(rowIndex: number): void {
+  this.rows = this.rows
+    .filter(r => r.index !== rowIndex)
+    .map((r, i) => ({
+      ...r,
+      index: i + 1
+    }));
+}
