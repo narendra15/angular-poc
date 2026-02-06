@@ -1,0 +1,328 @@
+import { Component, OnInit } from '@angular/core';
+import {
+  FormArray,
+  FormBuilder,
+  FormControl,
+  FormGroup,
+  Validators,
+  AbstractControl,
+} from '@angular/forms';
+
+@Component({
+  selector: 'app-field-definition',
+  templateUrl: './field-definition.component.html',
+})
+export class FieldDefinitionComponent implements OnInit {
+  /** 🔑 Toggle this in future to enable existing rows */
+  enableExistingRows = false;
+
+  form!: FormGroup;
+
+  /** Static dropdowns */
+  formFieldOptions = ['Free text', 'Radio button', 'Drop down', 'Date picker'];
+  fieldCategoryOptions = ['User', 'Derived'];
+  fieldRequirementOptions = ['Mandatory', 'Conditionally mandatory', 'Optional'];
+  yesNoOptions = ['Yes', 'No'];
+  allowedValuesOptions = ['STANDARD_VALUES', 'NOT_APPLICABLE'];
+
+  /** ---- SAMPLE API DATA (replace with real API) ---- */
+  rowData = {
+    bcl_cv: ['eff_ts', 'end_ts'],
+    bcl_err_tbl: ['file_name', 'end_ts'],
+  };
+
+  metaData: any = {
+    bcl_cv: {
+      eff_ts: {
+        field_data_type: 'character varying',
+        field_maximum_length: 50,
+        numeric_precision: null,
+        numeric_scale: null,
+      },
+      end_ts: {
+        field_data_type: 'bigint',
+        field_maximum_length: null,
+        numeric_precision: 64,
+        numeric_scale: 0,
+      },
+    },
+  };
+
+  existingData: any = {
+    bcl_cv: {
+      eff_ts: {
+        system_field_name: 'RPT_DATA_DATE',
+        form_field: 'Date picker',
+        field_category: 'User',
+        field_requirement: 'Mandatory',
+        dependent_field: null,
+        field_default_value: null,
+        field_editable: 'Yes',
+        field_validation_rule_exists: 'Yes',
+        field_derivation_rule_exists: 'Yes',
+        field_allowed_values: 'NOT_APPLICABLE',
+        field_standard_values: null,
+        field_position_in_template: 1,
+      },
+    },
+  };
+
+  /** ---------------------------------------------- */
+
+  ngOnInit(): void {
+    this.form = this.fb.group({
+      rows: this.fb.array([], this.uniqueUiFieldValidator()),
+    });
+
+    this.buildRows();
+  }
+
+  constructor(private fb: FormBuilder) {}
+
+  get rows(): FormArray {
+    return this.form.get('rows') as FormArray;
+  }
+
+  /** ------------------ BUILD ROWS ------------------ */
+
+  private buildRows(): void {
+    Object.entries(this.rowData).forEach(([tableName, columns]) => {
+      columns.forEach((columnName) => {
+        const meta = this.metaData?.[tableName]?.[columnName] ?? {};
+        const existing = this.existingData?.[tableName]?.[columnName] ?? null;
+
+        const row = this.createRow(tableName, columnName, meta, existing);
+        this.rows.push(row);
+
+        if (existing && !this.enableExistingRows) {
+          row.disable({ emitEvent: false });
+        }
+      });
+    });
+  }
+
+  private createRow(
+    tableName: string,
+    columnName: string,
+    meta: any,
+    existing: any
+  ): FormGroup {
+    const fg = this.fb.group({
+      tableName: [{ value: tableName, disabled: true }],
+      columnName: [{ value: columnName, disabled: true }],
+
+      uiFieldName: [
+        existing?.system_field_name ?? null,
+        [
+          Validators.required,
+          Validators.minLength(5),
+          Validators.maxLength(50),
+          Validators.pattern(/^[A-Za-z ]+$/),
+        ],
+      ],
+
+      formField: [existing?.form_field ?? null, Validators.required],
+      fieldCategory: [existing?.field_category ?? null, Validators.required],
+
+      fieldRequirement: [
+        existing?.field_requirement ?? null,
+        Validators.required,
+      ],
+
+      dependentField: [existing?.dependent_field ?? null],
+
+      fieldDataType: [{ value: meta.field_data_type ?? null, disabled: true }],
+      fieldMaxLength: [{ value: meta.field_maximum_length ?? null, disabled: true }],
+      numericPrecision: [{ value: meta.numeric_precision ?? null, disabled: true }],
+      numericScale: [{ value: meta.numeric_scale ?? null, disabled: true }],
+
+      defaultValue: [existing?.field_default_value ?? null],
+      editableByUser: [existing?.field_editable ?? null],
+      validationRuleExists: [
+        existing?.field_validation_rule_exists ?? null,
+        Validators.required,
+      ],
+      derivationRuleExists: [
+        existing?.field_derivation_rule_exists ?? null,
+        Validators.required,
+      ],
+
+      allowedValues: [existing?.field_allowed_values ?? null],
+      standardValues: [existing?.field_standard_values ?? null],
+
+      positionInTemplate: [
+        existing?.field_position_in_template ?? null,
+        Validators.pattern(/^[0-9]+$/),
+      ],
+    });
+
+    this.attachDynamicRules(fg);
+    return fg;
+  }
+
+  /** ------------------ RULE ENGINE ------------------ */
+
+  private attachDynamicRules(row: FormGroup): void {
+    row.get('fieldCategory')?.valueChanges.subscribe((val) => {
+      const reqCtrl = row.get('fieldRequirement');
+      if (val === 'Derived') {
+        reqCtrl?.disable();
+        reqCtrl?.setValue(null);
+      } else {
+        reqCtrl?.enable();
+      }
+    });
+
+    row.get('fieldRequirement')?.valueChanges.subscribe((val) => {
+      const depCtrl = row.get('dependentField');
+      if (val === 'Conditionally mandatory' && this.rows.length > 1) {
+        depCtrl?.enable();
+      } else {
+        depCtrl?.disable();
+        depCtrl?.setValue(null);
+      }
+    });
+
+    row.get('defaultValue')?.valueChanges.subscribe((val) => {
+      const allowedCtrl = row.get('allowedValues');
+      if (val !== null && val !== '') {
+        allowedCtrl?.enable();
+      } else {
+        allowedCtrl?.disable();
+        allowedCtrl?.setValue(null);
+      }
+    });
+
+    row.get('allowedValues')?.valueChanges.subscribe((val) => {
+      const stdCtrl = row.get('standardValues');
+      if (val === 'STANDARD_VALUES') {
+        stdCtrl?.enable();
+        stdCtrl?.setValidators(this.standardValuesValidator());
+      } else {
+        stdCtrl?.disable();
+        stdCtrl?.setValue(null);
+      }
+      stdCtrl?.updateValueAndValidity();
+    });
+  }
+
+  /** ------------------ HELPERS ------------------ */
+
+  getDependentOptions(currentIndex: number): string[] {
+    return this.rows.controls
+      .map((ctrl, i) => ({ i, name: ctrl.get('uiFieldName')?.value }))
+      .filter((x) => x.i !== currentIndex && !!x.name)
+      .map((x) => x.name);
+  }
+
+  /** ------------------ VALIDATORS ------------------ */
+
+  private uniqueUiFieldValidator() {
+    return (fa: AbstractControl) => {
+      const names = (fa as FormArray).controls
+        .map((c) => c.get('uiFieldName')?.value?.toLowerCase())
+        .filter(Boolean);
+
+      return new Set(names).size === names.length
+        ? null
+        : { duplicateUiFieldName: true };
+    };
+  }
+
+  private standardValuesValidator() {
+    return (control: AbstractControl) => {
+      if (!control.value) return null;
+
+      const values = control.value.split(',');
+      if (values.length > 10) return { maxStandardValues: true };
+
+      const regex = /^(\d+|"[A-Za-z0-9 ]+")$/;
+      return values.every((v: string) => regex.test(v.trim()))
+        ? null
+        : { invalidStandardValue: true };
+    };
+  }
+
+  /** ------------------ SAVE ------------------ */
+
+  save(): void {
+    if (this.form.invalid) {
+      this.form.markAllAsTouched();
+      return;
+    }
+
+    const payload = this.rows.getRawValue().map((r) => ({
+      table_name: r.tableName,
+      column_name: r.columnName,
+      system_field_name: r.uiFieldName,
+      form_field: r.formField,
+      field_category: r.fieldCategory,
+      field_requirement: r.fieldRequirement,
+      dependent_field: r.dependentField,
+      field_default_value: r.defaultValue,
+      field_allowed_values: r.allowedValues,
+      field_standard_values: r.standardValues,
+      field_position_in_template: r.positionInTemplate,
+    }));
+
+    console.log('FINAL PAYLOAD', payload);
+  }
+}
+
+
+
+
+////////////////
+
+
+
+<form [formGroup]="form">
+  <table mat-table [dataSource]="rows.controls" formArrayName="rows">
+
+    <ng-container matColumnDef="tableName">
+      <th mat-header-cell *matHeaderCellDef>Table</th>
+      <td mat-cell *matCellDef="let row; let i = index">
+        {{ row.get('tableName')?.value }}
+      </td>
+    </ng-container>
+
+    <ng-container matColumnDef="columnName">
+      <th mat-header-cell *matHeaderCellDef>Column</th>
+      <td mat-cell *matCellDef="let row">
+        {{ row.get('columnName')?.value }}
+      </td>
+    </ng-container>
+
+    <ng-container matColumnDef="uiFieldName">
+      <th mat-header-cell *matHeaderCellDef>UI Field Name</th>
+      <td mat-cell *matCellDef="let row">
+        <input matInput [formControl]="row.get('uiFieldName')" />
+      </td>
+    </ng-container>
+
+    <ng-container matColumnDef="dependentField">
+      <th mat-header-cell *matHeaderCellDef>Dependent Field</th>
+      <td mat-cell *matCellDef="let row; let i = index">
+        <mat-select [formControl]="row.get('dependentField')">
+          <mat-option
+            *ngFor="let opt of getDependentOptions(i)"
+            [value]="opt"
+          >
+            {{ opt }}
+          </mat-option>
+        </mat-select>
+      </td>
+    </ng-container>
+
+    <tr mat-header-row *matHeaderRowDef="['tableName','columnName','uiFieldName','dependentField']"></tr>
+    <tr mat-row *matRowDef="let row; columns: ['tableName','columnName','uiFieldName','dependentField']"></tr>
+  </table>
+
+  <button mat-raised-button color="primary" (click)="save()">Save</button>
+</form>
+
+
+
+
+
+
