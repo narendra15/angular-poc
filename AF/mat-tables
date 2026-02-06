@@ -1,0 +1,147 @@
+// target-table.mock.ts
+export const TARGET_TABLE_DATA = [
+  {
+    databaseType: 'Redshift',
+    database: 'dev_j1_s3_rfdh',
+    schema: 'bcl',
+    tableType: 'FACT',
+    table: 'bcl_cv',
+    keyColumns: 'cl_cd, grp_cl_id',
+  },
+  {
+    databaseType: 'Redshift',
+    database: 'dev_j1_s3_rfdh',
+    schema: 'bcl',
+    tableType: 'FACT',
+    table: 'bcl_error_tbl',
+    keyColumns: 'rfdh_cd, rfdh_id',
+  },
+];
+
+
+
+
+
+displayedColumns = [
+    'databaseType',
+    'database',
+    'schema',
+    'tableType',
+    'table',
+    'keyColumns',
+  ];
+
+
+  dataSource: any[] = [];
+
+
+  loadTargetTables(): void {
+    this.mappingService.getTargetTables().subscribe((res) => {
+      this.dataSource = res;
+    });
+  }
+
+
+
+  <!-- target-table.component.html -->
+<table mat-table [dataSource]="dataSource" class="mat-elevation-z2">
+
+  <ng-container matColumnDef="databaseType">
+    <th mat-header-cell *matHeaderCellDef> Database Type </th>
+    <td mat-cell *matCellDef="let row"> {{ row.databaseType }} </td>
+  </ng-container>
+
+  <ng-container matColumnDef="database">
+    <th mat-header-cell *matHeaderCellDef> Database </th>
+    <td mat-cell *matCellDef="let row"> {{ row.database }} </td>
+  </ng-container>
+
+  <ng-container matColumnDef="schema">
+    <th mat-header-cell *matHeaderCellDef> Schema </th>
+    <td mat-cell *matCellDef="let row"> {{ row.schema }} </td>
+  </ng-container>
+
+  <ng-container matColumnDef="tableType">
+    <th mat-header-cell *matHeaderCellDef> Table Type </th>
+    <td mat-cell *matCellDef="let row"> {{ row.tableType }} </td>
+  </ng-container>
+
+  <ng-container matColumnDef="table">
+    <th mat-header-cell *matHeaderCellDef> Table </th>
+    <td mat-cell *matCellDef="let row"> {{ row.table }} </td>
+  </ng-container>
+
+  <ng-container matColumnDef="keyColumns">
+    <th mat-header-cell *matHeaderCellDef> Key Columns </th>
+    <td mat-cell *matCellDef="let row"> {{ row.keyColumns }} </td>
+  </ng-container>
+
+  <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
+  <tr mat-row *matRowDef="let row; columns: displayedColumns"></tr>
+
+</table>
+
+
+
+/////////////////////////
+
+// key-mapping.mock.ts
+export const KEY_MAPPING_DATA = [
+  {
+    targetTable: 'bcl_cv',
+    sourceTable: 'bcl_rfdh',
+    targetKey: 'cl_cd',
+    sourceKey: 'rfdh_cd',
+  },
+  {
+    targetTable: 'bcl_cv',
+    sourceTable: 'bcl_rfdh',
+    targetKey: 'grp_cl_id',
+    sourceKey: 'rfdh_id',
+  },
+];
+
+
+ displayedColumns = [
+    'targetTable',
+    'sourceTable',
+    'targetKey',
+    'sourceKey',
+  ];
+
+  dataSource: any[] = [];
+
+  loadKeyMappings(): void {
+    this.mappingService.getKeyMappings().subscribe((res) => {
+      this.dataSource = res;
+    });
+  }
+
+
+  <!-- key-mapping.component.html -->
+<table mat-table [dataSource]="dataSource" class="mat-elevation-z2">
+
+  <ng-container matColumnDef="targetTable">
+    <th mat-header-cell *matHeaderCellDef> Target Table </th>
+    <td mat-cell *matCellDef="let row"> {{ row.targetTable }} </td>
+  </ng-container>
+
+  <ng-container matColumnDef="sourceTable">
+    <th mat-header-cell *matHeaderCellDef> Source Table </th>
+    <td mat-cell *matCellDef="let row"> {{ row.sourceTable }} </td>
+  </ng-container>
+
+  <ng-container matColumnDef="targetKey">
+    <th mat-header-cell *matHeaderCellDef> Target Key </th>
+    <td mat-cell *matCellDef="let row"> {{ row.targetKey }} </td>
+  </ng-container>
+
+  <ng-container matColumnDef="sourceKey">
+    <th mat-header-cell *matHeaderCellDef> Source Key </th>
+    <td mat-cell *matCellDef="let row"> {{ row.sourceKey }} </td>
+  </ng-container>
+
+  <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
+  <tr mat-row *matRowDef="let row; columns: displayedColumns"></tr>
+
+</table>
