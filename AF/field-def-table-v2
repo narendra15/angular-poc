@@ -1,0 +1,349 @@
+import { Component, OnInit } from '@angular/core';
+import {
+  AbstractControl,
+  FormArray,
+  FormBuilder,
+  FormGroup,
+  Validators,
+} from '@angular/forms';
+
+@Component({
+  selector: 'app-field-definition-grid',
+  templateUrl: './field-definition-grid.component.html',
+})
+export class FieldDefinitionGridComponent implements OnInit {
+  /** 🔑 Toggle in future to enable existing rows */
+  enableExistingRows = false;
+
+  form!: FormGroup;
+
+  displayedColumns = [
+    'tableName',
+    'columnName',
+    'uiFieldName',
+    'formField',
+    'fieldCategory',
+    'fieldRequirement',
+    'dependentField',
+  ];
+
+  /** ---------------- DROPDOWN OPTIONS ---------------- */
+
+  formFieldOptions = [
+    { label: 'Free text', value: 'Free text' },
+    { label: 'Radio button', value: 'Radio button' },
+    { label: 'Drop down', value: 'Drop down' },
+    { label: 'Date picker', value: 'Date picker' },
+  ];
+
+  fieldCategoryOptions = [
+    { label: 'User', value: 'User' },
+    { label: 'Derived', value: 'Derived' },
+  ];
+
+  fieldRequirementOptions = [
+    { label: 'Mandatory', value: 'Mandatory' },
+    { label: 'Conditionally mandatory', value: 'Conditionally mandatory' },
+    { label: 'Optional', value: 'Optional' },
+  ];
+
+  yesNoOptions = [
+    { label: 'Yes', value: 'Yes' },
+    { label: 'No', value: 'No' },
+  ];
+
+  allowedValuesOptions = [
+    { label: 'STANDARD_VALUES', value: 'STANDARD_VALUES' },
+    { label: 'NOT_APPLICABLE', value: 'NOT_APPLICABLE' },
+  ];
+
+  /** ---------------- SAMPLE API DATA ---------------- */
+
+  rowData = {
+    bcl_cv: ['eff_ts', 'end_ts'],
+    bcl_err_tbl: ['file_name', 'end_ts'],
+  };
+
+  metaData: any = {
+    bcl_cv: {
+      eff_ts: {
+        field_data_type: 'character varying',
+        field_maximum_length: 50,
+        numeric_precision: null,
+        numeric_scale: null,
+      },
+      end_ts: {
+        field_data_type: 'bigint',
+        field_maximum_length: null,
+        numeric_precision: 64,
+        numeric_scale: 0,
+      },
+    },
+  };
+
+  existingData: any = {
+    bcl_cv: {
+      eff_ts: {
+        system_field_name: 'RPT_DATA_DATE',
+        form_field: 'Date picker',
+        field_category: 'User',
+        field_requirement: 'Mandatory',
+        dependent_field: null,
+      },
+    },
+  };
+
+  /** -------------------------------------------------- */
+
+  constructor(private fb: FormBuilder) {}
+
+  ngOnInit(): void {
+    this.form = this.fb.group({
+      rows: this.fb.array([], this.uniqueUiFieldValidator()),
+    });
+
+    this.buildRows();
+  }
+
+  get rows(): FormArray {
+    return this.form.get('rows') as FormArray;
+  }
+
+  /** ---------------- BUILD GRID ---------------- */
+
+  private buildRows(): void {
+    Object.entries(this.rowData).forEach(([tableName, columns]) => {
+      columns.forEach((columnName) => {
+        const meta = this.metaData?.[tableName]?.[columnName] ?? {};
+        const existing = this.existingData?.[tableName]?.[columnName] ?? null;
+
+        const row = this.createRow(tableName, columnName, meta, existing);
+        this.rows.push(row);
+
+        if (existing && !this.enableExistingRows) {
+          row.disable({ emitEvent: false });
+        }
+      });
+    });
+  }
+
+  private createRow(
+    tableName: string,
+    columnName: string,
+    meta: any,
+    existing: any
+  ): FormGroup {
+    const fg = this.fb.group({
+      tableName: [{ value: tableName, disabled: true }],
+      columnName: [{ value: columnName, disabled: true }],
+
+      uiFieldName: [
+        existing?.system_field_name ?? null,
+        [
+          Validators.required,
+          Validators.minLength(5),
+          Validators.maxLength(50),
+          Validators.pattern(/^[A-Za-z ]+$/),
+        ],
+      ],
+
+      formField: [existing?.form_field ?? null, Validators.required],
+      fieldCategory: [existing?.field_category ?? null, Validators.required],
+      fieldRequirement: [
+        existing?.field_requirement ?? null,
+        Validators.required,
+      ],
+      dependentField: [existing?.dependent_field ?? null],
+
+      fieldDataType: [{ value: meta.field_data_type ?? null, disabled: true }],
+      fieldMaxLength: [{ value: meta.field_maximum_length ?? null, disabled: true }],
+      numericPrecision: [{ value: meta.numeric_precision ?? null, disabled: true }],
+      numericScale: [{ value: meta.numeric_scale ?? null, disabled: true }],
+    });
+
+    this.attachRules(fg);
+    return fg;
+  }
+
+  /** ---------------- RULE ENGINE ---------------- */
+
+  private attachRules(row: FormGroup): void {
+    row.get('fieldCategory')?.valueChanges.subscribe((val) => {
+      const req = row.get('fieldRequirement');
+      if (val === 'Derived') {
+        req?.disable();
+        req?.setValue(null);
+      } else {
+        req?.enable();
+      }
+    });
+
+    row.get('fieldRequirement')?.valueChanges.subscribe(() => {
+      const dep = row.get('dependentField');
+      if (!this.isDependentDisabled(this.rows.controls.indexOf(row))) {
+        dep?.enable();
+      } else {
+        dep?.disable();
+        dep?.setValue(null);
+      }
+    });
+  }
+
+  /** ---------------- HELPERS ---------------- */
+
+  getDependentOptions(index: number) {
+    return this.rows.controls
+      .map((ctrl, i) => ({
+        i,
+        name: ctrl.get('uiFieldName')?.value,
+      }))
+      .filter((x) => x.i !== index && !!x.name)
+      .map((x) => ({ label: x.name, value: x.name }));
+  }
+
+  isDependentDisabled(index: number): boolean {
+    const row = this.rows.at(index) as FormGroup;
+
+    return (
+      row.get('fieldRequirement')?.value !== 'Conditionally mandatory' ||
+      this.rows.length < 2
+    );
+  }
+
+  /** ---------------- VALIDATORS ---------------- */
+
+  private uniqueUiFieldValidator() {
+    return (control: AbstractControl) => {
+      const names = (control as FormArray).controls
+        .map((c) => c.get('uiFieldName')?.value?.toLowerCase())
+        .filter(Boolean);
+
+      return new Set(names).size === names.length
+        ? null
+        : { duplicateUiFieldName: true };
+    };
+  }
+
+  /** ---------------- SAVE ---------------- */
+
+  save(): void {
+    if (this.form.invalid) {
+      this.form.markAllAsTouched();
+      return;
+    }
+
+    const payload = this.rows.getRawValue();
+    console.log('FINAL PAYLOAD', payload);
+  }
+}
+
+
+/////////////////////////
+
+
+
+
+<form [formGroup]="form">
+  <table
+    mat-table
+    [dataSource]="rows.controls"
+    formArrayName="rows"
+    class="mat-elevation-z2"
+  >
+    <!-- TABLE NAME -->
+    <ng-container matColumnDef="tableName">
+      <th mat-header-cell *matHeaderCellDef>Table</th>
+      <td
+        mat-cell
+        *matCellDef="let row; let i = index"
+        [formGroupName]="i"
+      >
+        {{ row.get('tableName')?.value }}
+      </td>
+    </ng-container>
+
+    <!-- COLUMN NAME -->
+    <ng-container matColumnDef="columnName">
+      <th mat-header-cell *matHeaderCellDef>Column</th>
+      <td
+        mat-cell
+        *matCellDef="let row; let i = index"
+        [formGroupName]="i"
+      >
+        {{ row.get('columnName')?.value }}
+      </td>
+    </ng-container>
+
+    <!-- UI FIELD NAME -->
+    <ng-container matColumnDef="uiFieldName">
+      <th mat-header-cell *matHeaderCellDef>UI Field Name</th>
+      <td
+        mat-cell
+        *matCellDef="let row; let i = index"
+        [formGroupName]="i"
+      >
+        <input matInput formControlName="uiFieldName" />
+      </td>
+    </ng-container>
+
+    <!-- FORM FIELD -->
+    <ng-container matColumnDef="formField">
+      <th mat-header-cell *matHeaderCellDef>Form Field</th>
+      <td mat-cell *matCellDef="let row; let i = index" [formGroupName]="i">
+        <bmo-select
+          [options]="formFieldOptions"
+          formControlName="formField"
+          placeholder="Form Field"
+        ></bmo-select>
+      </td>
+    </ng-container>
+
+    <!-- FIELD CATEGORY -->
+    <ng-container matColumnDef="fieldCategory">
+      <th mat-header-cell *matHeaderCellDef>Category</th>
+      <td mat-cell *matCellDef="let row; let i = index" [formGroupName]="i">
+        <bmo-select
+          [options]="fieldCategoryOptions"
+          formControlName="fieldCategory"
+          placeholder="Field Category"
+        ></bmo-select>
+      </td>
+    </ng-container>
+
+    <!-- FIELD REQUIREMENT -->
+    <ng-container matColumnDef="fieldRequirement">
+      <th mat-header-cell *matHeaderCellDef>Requirement</th>
+      <td mat-cell *matCellDef="let row; let i = index" [formGroupName]="i">
+        <bmo-select
+          [options]="fieldRequirementOptions"
+          formControlName="fieldRequirement"
+          placeholder="Field Requirement"
+        ></bmo-select>
+      </td>
+    </ng-container>
+
+    <!-- DEPENDENT FIELD -->
+    <ng-container matColumnDef="dependentField">
+      <th mat-header-cell *matHeaderCellDef>Dependent Field</th>
+      <td mat-cell *matCellDef="let row; let i = index" [formGroupName]="i">
+        <bmo-select
+          [options]="getDependentOptions(i)"
+          formControlName="dependentField"
+          [disabled]="isDependentDisabled(i)"
+          placeholder="Dependent Field"
+        ></bmo-select>
+      </td>
+    </ng-container>
+
+    <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
+    <tr mat-row *matRowDef="let row; columns: displayedColumns"></tr>
+  </table>
+
+  <br />
+
+  <button mat-raised-button color="primary" (click)="save()">
+    Save
+  </button>
+</form>
+
+
