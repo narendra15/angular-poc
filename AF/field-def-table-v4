@@ -421,3 +421,47 @@ save(): void {
 
   <button mat-raised-button color="primary" (click)="save()">Save</button>
 </form>
+
+
+
+/// Save fix
+
+
+private hasText(v: any): boolean {
+  return v !== null && v !== undefined && String(v).trim().length > 0;
+}
+
+private isSubmittableRow(row: AbstractControl): boolean {
+  // Editable row + user started it (uiFieldName filled)
+  return row.enabled && this.hasText(row.get('uiFieldName')?.value);
+}
+
+save(): void {
+  // 1) Validate ONLY submittable rows
+  let hasError = false;
+
+  this.rows.controls.forEach((row) => {
+    if (this.isSubmittableRow(row)) {
+      // make UI show errors only for rows that matter
+      row.markAllAsTouched();
+      row.updateValueAndValidity({ emitEvent: false });
+
+      if (row.invalid) {
+        hasError = true;
+      }
+    }
+  });
+
+  if (hasError) {
+    console.log('Save Failed');
+    return;
+  }
+
+  // 2) Build payload ONLY from submittable rows
+  const payload = this.rows.controls
+    .filter((row) => this.isSubmittableRow(row))
+    .map((row) => row.getRawValue());
+
+  console.log('FINAL PAYLOAD', payload);
+}
+
