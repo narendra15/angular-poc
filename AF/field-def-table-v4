@@ -15,6 +15,47 @@ export class FieldDefinitionGridComponent implements OnInit {
   form!: FormGroup;
   enableExistingRows = false;
 
+  /* ================= OPTIONS (REQUIRED BY TEMPLATE) ================= */
+
+  formFieldOptions = [
+    'Free text',
+    'Radio button',
+    'Drop down',
+    'Date picker'
+  ];
+
+  fieldCategoryOptions = ['User', 'Derived'];
+
+  fieldRequirementOptions = [
+    'Mandatory',
+    'Conditionally mandatory',
+    'Optional'
+  ];
+
+  yesNoOptions = ['Yes', 'No'];
+
+  allowedValuesOptions = [
+    'STANDARD_VALUES',
+    'NOT_APPLICABLE'
+  ];
+
+  displayedColumns = [
+    'tableName',
+    'columnName',
+    'uiFieldName',
+    'formField',
+    'fieldCategory',
+    'fieldRequirement',
+    'dependentField',
+    'defaultValue',
+    'editableByUser',
+    'validationRuleExists',
+    'derivationRuleExists',
+    'allowedValues',
+    'standardValues',
+    'positionInTemplate'
+  ];
+
   constructor(private fb: FormBuilder) {}
 
   ngOnInit(): void {
@@ -22,7 +63,7 @@ export class FieldDefinitionGridComponent implements OnInit {
       rows: this.fb.array([])
     });
 
-    // SAMPLE: add rows here
+    // Example usage:
     // this.addRow(meta, existingData);
   }
 
@@ -30,9 +71,7 @@ export class FieldDefinitionGridComponent implements OnInit {
     return this.form.get('rows') as FormArray;
   }
 
-  /* ============================================================
-     ROW CREATION
-     ============================================================ */
+  /* ================= ROW CREATION ================= */
 
   addRow(meta: any, existing?: any): void {
     const row = this.createRow(meta, existing);
@@ -61,32 +100,25 @@ export class FieldDefinitionGridComponent implements OnInit {
       fieldRequirement: [existing?.field_requirement ?? null],
       dependentField: [existing?.dependent_field ?? null],
 
-      fieldDataType: [{ value: meta.field_data_type, disabled: true }],
-      fieldMaximumLength: [{ value: meta.field_maximum_length, disabled: true }],
-      numericPrecision: [{ value: meta.numeric_precision, disabled: true }],
-      numericScale: [{ value: meta.numeric_scale, disabled: true }],
-
       defaultValue: [existing?.field_default_value ?? null],
 
       editableByUser: [
-        existing?.field_editable ?? 'YES',
+        existing?.field_editable ?? 'Yes',
         Validators.required
       ],
       validationRuleExists: [
-        existing?.field_validation_rule_exists ?? 'NO',
+        existing?.field_validation_rule_exists ?? 'No',
         Validators.required
       ],
       derivationRuleExists: [
-        existing?.field_derivation_rule_exists ?? 'NO',
+        existing?.field_derivation_rule_exists ?? 'No',
         Validators.required
       ],
 
       allowedValues: [
         existing?.field_allowed_values ?? 'NOT_APPLICABLE'
       ],
-      standardValues: [
-        existing?.field_standard_values ?? null
-      ],
+      standardValues: [existing?.field_standard_values ?? null],
 
       positionInTemplate: [
         existing?.field_position_in_template ?? null,
@@ -103,9 +135,7 @@ export class FieldDefinitionGridComponent implements OnInit {
     return fg;
   }
 
-  /* ============================================================
-     RULE ENGINE (THIS FIXES SAVE FAILED)
-     ============================================================ */
+  /* ================= RULE ENGINE ================= */
 
   private applyRowRules(row: FormGroup): void {
     const categoryCtrl = row.get('fieldCategory')!;
@@ -114,7 +144,7 @@ export class FieldDefinitionGridComponent implements OnInit {
     const allowedCtrl = row.get('allowedValues')!;
     const standardCtrl = row.get('standardValues')!;
 
-    // FIELD REQUIREMENT
+    // Field Requirement
     if (categoryCtrl.value === 'Derived') {
       requirementCtrl.clearValidators();
       requirementCtrl.setValue(null, { emitEvent: false });
@@ -125,7 +155,7 @@ export class FieldDefinitionGridComponent implements OnInit {
     }
     requirementCtrl.updateValueAndValidity({ emitEvent: false });
 
-    // DEPENDENT FIELD
+    // Dependent Field
     if (requirementCtrl.value === 'Conditionally mandatory') {
       dependentCtrl.setValidators(Validators.required);
       dependentCtrl.enable({ emitEvent: false });
@@ -136,7 +166,7 @@ export class FieldDefinitionGridComponent implements OnInit {
     }
     dependentCtrl.updateValueAndValidity({ emitEvent: false });
 
-    // STANDARD VALUES
+    // Standard Values
     if (allowedCtrl.value === 'STANDARD_VALUES') {
       standardCtrl.setValidators([
         Validators.required,
@@ -151,27 +181,19 @@ export class FieldDefinitionGridComponent implements OnInit {
     standardCtrl.updateValueAndValidity({ emitEvent: false });
   }
 
-  /* ============================================================
-     SUBSCRIPTIONS
-     ============================================================ */
-
   private wireRowSubscriptions(row: FormGroup): void {
     row.get('fieldCategory')!.valueChanges.subscribe(() =>
       this.applyRowRules(row)
     );
-
     row.get('fieldRequirement')!.valueChanges.subscribe(() =>
       this.applyRowRules(row)
     );
-
     row.get('allowedValues')!.valueChanges.subscribe(() =>
       this.applyRowRules(row)
     );
   }
 
-  /* ============================================================
-     VALIDATOR
-     ============================================================ */
+  /* ================= VALIDATOR ================= */
 
   private standardValuesValidator() {
     return (control: AbstractControl) => {
@@ -182,9 +204,7 @@ export class FieldDefinitionGridComponent implements OnInit {
         .map((v: string) => v.trim())
         .filter(Boolean);
 
-      if (values.length > 10) {
-        return { maxStandardValues: true };
-      }
+      if (values.length > 10) return { maxStandardValues: true };
 
       const invalid = values.some(v => {
         if (/^\d+$/.test(v)) return false;
@@ -196,30 +216,23 @@ export class FieldDefinitionGridComponent implements OnInit {
     };
   }
 
-  /* ============================================================
-     SAVE
-     ============================================================ */
+  /* ================= DEPENDENT OPTIONS ================= */
+
+  getDependentOptions(rowIndex: number): string[] {
+    return this.rows.controls
+      .map((row, idx) =>
+        idx !== rowIndex ? row.get('uiFieldName')?.value : null
+      )
+      .filter(v => !!v);
+  }
+
+  /* ================= SAVE ================= */
 
   save(): void {
     this.form.updateValueAndValidity({ emitEvent: false });
 
     if (this.form.invalid) {
       console.log('Save Failed');
-
-      this.rows.controls.forEach((row, i) => {
-        Object.entries((row as FormGroup).controls).forEach(
-          ([key, ctrl]) => {
-            if (ctrl.invalid) {
-              console.log(
-                `Row ${i} INVALID → ${key}`,
-                ctrl.errors,
-                ctrl.value
-              );
-            }
-          }
-        );
-      });
-
       this.form.markAllAsTouched();
       return;
     }
@@ -227,3 +240,114 @@ export class FieldDefinitionGridComponent implements OnInit {
     console.log('FINAL PAYLOAD', this.rows.getRawValue());
   }
 }
+
+
+
+
+
+/////////////// HTMl //////////////
+
+<form [formGroup]="form">
+  <table
+    mat-table
+    [dataSource]="rows.controls"
+    formArrayName="rows"
+    class="mat-elevation-z1"
+  >
+    <ng-container
+      *ngFor="let col of displayedColumns"
+      [matColumnDef]="col"
+    >
+      <th mat-header-cell *matHeaderCellDef>
+        {{ col }}
+      </th>
+
+      <td
+        mat-cell
+        *matCellDef="let row; let i = index"
+        [formGroupName]="i"
+      >
+        <!-- READ ONLY -->
+        <ng-container
+          *ngIf="['tableName','columnName'].includes(col)"
+        >
+          {{ row.get(col)?.value }}
+        </ng-container>
+
+        <!-- INPUT -->
+        <input
+          *ngIf="['uiFieldName','defaultValue','standardValues','positionInTemplate'].includes(col)"
+          matInput
+          [formControlName]="col"
+        />
+
+        <!-- SELECTS -->
+        <bmo-select-box
+          *ngIf="col === 'formField'"
+          [options]="formFieldOptions"
+          formControlName="formField"
+        ></bmo-select-box>
+
+        <bmo-select-box
+          *ngIf="col === 'fieldCategory'"
+          [options]="fieldCategoryOptions"
+          formControlName="fieldCategory"
+        ></bmo-select-box>
+
+        <bmo-select-box
+          *ngIf="col === 'fieldRequirement'"
+          [options]="fieldRequirementOptions"
+          formControlName="fieldRequirement"
+        ></bmo-select-box>
+
+        <bmo-select-box
+          *ngIf="col === 'dependentField'"
+          [options]="getDependentOptions(i)"
+          formControlName="dependentField"
+        ></bmo-select-box>
+
+        <bmo-select-box
+          *ngIf="col === 'editableByUser'"
+          [options]="yesNoOptions"
+          formControlName="editableByUser"
+        ></bmo-select-box>
+
+        <bmo-select-box
+          *ngIf="col === 'validationRuleExists'"
+          [options]="yesNoOptions"
+          formControlName="validationRuleExists"
+        ></bmo-select-box>
+
+        <bmo-select-box
+          *ngIf="col === 'derivationRuleExists'"
+          [options]="yesNoOptions"
+          formControlName="derivationRuleExists"
+        ></bmo-select-box>
+
+        <bmo-select-box
+          *ngIf="col === 'allowedValues'"
+          [options]="allowedValuesOptions"
+          formControlName="allowedValues"
+        ></bmo-select-box>
+      </td>
+    </ng-container>
+
+    <tr
+      mat-header-row
+      *matHeaderRowDef="displayedColumns; sticky: true"
+    ></tr>
+
+    <tr
+      mat-row
+      *matRowDef="let row; columns: displayedColumns"
+    ></tr>
+  </table>
+
+  <button
+    mat-raised-button
+    color="primary"
+    (click)="save()"
+  >
+    Save
+  </button>
+</form>
