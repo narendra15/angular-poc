@@ -212,4 +212,18 @@ export class FieldDefinitionGridComponent implements OnInit {
             if (ctrl.invalid) {
               console.log(
                 `Row ${i} INVALID → ${key}`,
-                ctrl.err
+                ctrl.errors,
+                ctrl.value
+              );
+            }
+          }
+        );
+      });
+
+      this.form.markAllAsTouched();
+      return;
+    }
+
+    console.log('FINAL PAYLOAD', this.rows.getRawValue());
+  }
+}
