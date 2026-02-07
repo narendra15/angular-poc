@@ -299,6 +299,34 @@ export class FieldDefinitionGridComponent implements OnInit {
 
     console.log('FINAL PAYLOAD', this.rows.getRawValue());
   }
+
+
+save(): void {
+  let hasError = false;
+
+  this.rows.controls.forEach((row) => {
+    if (this.isRowActive(row)) {
+      row.markAllAsTouched();
+      row.updateValueAndValidity({ emitEvent: false });
+
+      if (row.invalid) {
+        hasError = true;
+      }
+    }
+  });
+
+  if (hasError) {
+    console.log('Save Failed');
+    return;
+  }
+
+  const payload = this.rows.controls
+    .filter(row => this.isRowActive(row))
+    .map(row => row.getRawValue());
+
+  console.log('FINAL PAYLOAD', payload);
+}
+
 }
 
 
