@@ -1,0 +1,215 @@
+import { Component, OnInit } from '@angular/core';
+import {
+  AbstractControl,
+  FormArray,
+  FormBuilder,
+  FormGroup,
+  Validators
+} from '@angular/forms';
+
+@Component({
+  selector: 'app-field-definition-grid',
+  templateUrl: './field-definition-grid.html'
+})
+export class FieldDefinitionGridComponent implements OnInit {
+  form!: FormGroup;
+  enableExistingRows = false;
+
+  constructor(private fb: FormBuilder) {}
+
+  ngOnInit(): void {
+    this.form = this.fb.group({
+      rows: this.fb.array([])
+    });
+
+    // SAMPLE: add rows here
+    // this.addRow(meta, existingData);
+  }
+
+  get rows(): FormArray {
+    return this.form.get('rows') as FormArray;
+  }
+
+  /* ============================================================
+     ROW CREATION
+     ============================================================ */
+
+  addRow(meta: any, existing?: any): void {
+    const row = this.createRow(meta, existing);
+    this.rows.push(row);
+    this.wireRowSubscriptions(row);
+  }
+
+  private createRow(meta: any, existing?: any): FormGroup {
+    const fg = this.fb.group({
+      tableName: [{ value: meta.tableName, disabled: true }],
+      columnName: [{ value: meta.columnName, disabled: true }],
+
+      uiFieldName: [
+        existing?.system_field_name ?? null,
+        [
+          Validators.required,
+          Validators.minLength(5),
+          Validators.maxLength(50),
+          Validators.pattern(/^[A-Za-z ]+$/)
+        ]
+      ],
+
+      formField: [existing?.form_field ?? null, Validators.required],
+      fieldCategory: [existing?.field_category ?? null, Validators.required],
+
+      fieldRequirement: [existing?.field_requirement ?? null],
+      dependentField: [existing?.dependent_field ?? null],
+
+      fieldDataType: [{ value: meta.field_data_type, disabled: true }],
+      fieldMaximumLength: [{ value: meta.field_maximum_length, disabled: true }],
+      numericPrecision: [{ value: meta.numeric_precision, disabled: true }],
+      numericScale: [{ value: meta.numeric_scale, disabled: true }],
+
+      defaultValue: [existing?.field_default_value ?? null],
+
+      editableByUser: [
+        existing?.field_editable ?? 'YES',
+        Validators.required
+      ],
+      validationRuleExists: [
+        existing?.field_validation_rule_exists ?? 'NO',
+        Validators.required
+      ],
+      derivationRuleExists: [
+        existing?.field_derivation_rule_exists ?? 'NO',
+        Validators.required
+      ],
+
+      allowedValues: [
+        existing?.field_allowed_values ?? 'NOT_APPLICABLE'
+      ],
+      standardValues: [
+        existing?.field_standard_values ?? null
+      ],
+
+      positionInTemplate: [
+        existing?.field_position_in_template ?? null,
+        Validators.required
+      ]
+    });
+
+    this.applyRowRules(fg);
+
+    if (existing && !this.enableExistingRows) {
+      fg.disable({ emitEvent: false });
+    }
+
+    return fg;
+  }
+
+  /* ============================================================
+     RULE ENGINE (THIS FIXES SAVE FAILED)
+     ============================================================ */
+
+  private applyRowRules(row: FormGroup): void {
+    const categoryCtrl = row.get('fieldCategory')!;
+    const requirementCtrl = row.get('fieldRequirement')!;
+    const dependentCtrl = row.get('dependentField')!;
+    const allowedCtrl = row.get('allowedValues')!;
+    const standardCtrl = row.get('standardValues')!;
+
+    // FIELD REQUIREMENT
+    if (categoryCtrl.value === 'Derived') {
+      requirementCtrl.clearValidators();
+      requirementCtrl.setValue(null, { emitEvent: false });
+      requirementCtrl.disable({ emitEvent: false });
+    } else {
+      requirementCtrl.setValidators(Validators.required);
+      requirementCtrl.enable({ emitEvent: false });
+    }
+    requirementCtrl.updateValueAndValidity({ emitEvent: false });
+
+    // DEPENDENT FIELD
+    if (requirementCtrl.value === 'Conditionally mandatory') {
+      dependentCtrl.setValidators(Validators.required);
+      dependentCtrl.enable({ emitEvent: false });
+    } else {
+      dependentCtrl.clearValidators();
+      dependentCtrl.setValue(null, { emitEvent: false });
+      dependentCtrl.disable({ emitEvent: false });
+    }
+    dependentCtrl.updateValueAndValidity({ emitEvent: false });
+
+    // STANDARD VALUES
+    if (allowedCtrl.value === 'STANDARD_VALUES') {
+      standardCtrl.setValidators([
+        Validators.required,
+        this.standardValuesValidator()
+      ]);
+      standardCtrl.enable({ emitEvent: false });
+    } else {
+      standardCtrl.clearValidators();
+      standardCtrl.setValue(null, { emitEvent: false });
+      standardCtrl.disable({ emitEvent: false });
+    }
+    standardCtrl.updateValueAndValidity({ emitEvent: false });
+  }
+
+  /* ============================================================
+     SUBSCRIPTIONS
+     ============================================================ */
+
+  private wireRowSubscriptions(row: FormGroup): void {
+    row.get('fieldCategory')!.valueChanges.subscribe(() =>
+      this.applyRowRules(row)
+    );
+
+    row.get('fieldRequirement')!.valueChanges.subscribe(() =>
+      this.applyRowRules(row)
+    );
+
+    row.get('allowedValues')!.valueChanges.subscribe(() =>
+      this.applyRowRules(row)
+    );
+  }
+
+  /* ============================================================
+     VALIDATOR
+     ============================================================ */
+
+  private standardValuesValidator() {
+    return (control: AbstractControl) => {
+      if (!control.value) return null;
+
+      const values = control.value
+        .split(',')
+        .map((v: string) => v.trim())
+        .filter(Boolean);
+
+      if (values.length > 10) {
+        return { maxStandardValues: true };
+      }
+
+      const invalid = values.some(v => {
+        if (/^\d+$/.test(v)) return false;
+        if (/^".+"$/.test(v)) return false;
+        return true;
+      });
+
+      return invalid ? { invalidStandardValue: true } : null;
+    };
+  }
+
+  /* ============================================================
+     SAVE
+     ============================================================ */
+
+  save(): void {
+    this.form.updateValueAndValidity({ emitEvent: false });
+
+    if (this.form.invalid) {
+      console.log('Save Failed');
+
+      this.rows.controls.forEach((row, i) => {
+        Object.entries((row as FormGroup).controls).forEach(
+          ([key, ctrl]) => {
+            if (ctrl.invalid) {
+              console.log(
+                `Row ${i} INVALID → ${key}`,
+                ctrl.err
