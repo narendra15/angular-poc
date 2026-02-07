@@ -1,0 +1,432 @@
+import { Component, OnInit } from '@angular/core';
+import {
+  AbstractControl,
+  FormArray,
+  FormBuilder,
+  FormControl,
+  FormGroup,
+  ValidationErrors,
+  ValidatorFn,
+  Validators,
+} from '@angular/forms';
+
+type RowDataMap = Record<string, string[]>;
+type MetaMap = Record<string, Record<string, any>>;
+type ExistingMap = Record<string, Record<string, any>>;
+
+@Component({
+  selector: 'app-field-definition-grid',
+  templateUrl: './field-definition-grid.html',
+})
+export class FieldDefinitionGridComponent implements OnInit {
+  enableExistingRows = false;
+
+  // -------- SAMPLE API DATA (YOUR SHAPE) ----------
+  rowData: RowDataMap = {
+    bcl_cv: ['eff_ts', 'end_ts'],
+    bcl_err_tbl: ['file_name', 'end_ts'],
+  };
+
+  metaData: MetaMap = {
+    bcl_cv: {
+      eff_ts: {
+        field_data_type: 'character varying',
+        field_maximum_length: 50,
+        numeric_precision: null,
+        numeric_scale: null,
+      },
+      end_ts: {
+        field_data_type: 'bigint',
+        field_maximum_length: null,
+        numeric_precision: 64,
+        numeric_scale: 0,
+      },
+    },
+  };
+
+  existingData: ExistingMap = {
+    bcl_cv: {
+      eff_ts: {
+        system_field_name: 'RPT_DATA_DATE',
+        form_field: 'Date picker',
+        field_category: 'User',
+        field_requirement: 'Mandatory',
+        dependent_field: null,
+        field_default_value: null,
+        field_editable: 'Yes',
+        field_validation_rule_exists: 'Yes',
+        field_derivation_rule_exists: 'Yes',
+        field_allowed_values: 'NOT_APPLICABLE',
+        field_standard_values: null,
+        field_position_in_template: 1,
+      },
+    },
+  };
+
+  // -------- OPTIONS ----------
+  formFieldOptions = ['Free text', 'Radio button', 'Drop down', 'Date picker'];
+  fieldCategoryOptions = ['User', 'Derived'];
+  fieldRequirementOptions = ['Mandatory', 'Conditionally mandatory', 'Optional'];
+  yesNoOptions = ['Yes', 'No'];
+  allowedValuesOptions = ['STANDARD_VALUES', 'NOT_APPLICABLE'];
+
+  displayedColumns = [
+    'tableName',
+    'columnName',
+    'uiFieldName',
+    'formField',
+    'fieldCategory',
+    'fieldRequirement',
+    'dependentField',
+    'fieldDataType',
+    'fieldMaximumLength',
+    'numericPrecision',
+    'numericScale',
+    'defaultValue',
+    'editableByUser',
+    'validationRuleExists',
+    'derivationRuleExists',
+    'allowedValues',
+    'standardValues',
+    'positionInTemplate',
+  ];
+
+  form!: FormGroup;
+
+  constructor(private fb: FormBuilder) {}
+
+  ngOnInit(): void {
+    this.form = this.fb.group({
+      rows: this.fb.array([], { validators: [this.uniqueUiFieldNameValidator()] }),
+    });
+
+    this.buildRows();
+  }
+
+  get rows(): FormArray {
+    return this.form.get('rows') as FormArray;
+  }
+
+  // ---------------- BUILD ----------------
+  private buildRows(): void {
+    Object.keys(this.rowData).forEach((tableName) => {
+      this.rowData[tableName].forEach((columnName) => {
+        const meta = this.metaData?.[tableName]?.[columnName] ?? null;
+        const existing = this.existingData?.[tableName]?.[columnName] ?? null;
+
+        const row = this.createRow(tableName, columnName, meta, existing);
+        this.rows.push(row);
+
+        this.applyRules(row);
+        this.wireRules(row);
+
+        if (existing && !this.enableExistingRows) {
+          row.disable({ emitEvent: false });
+        }
+      });
+    });
+  }
+
+  private createRow(
+    tableName: string,
+    columnName: string,
+    meta: any,
+    existing: any
+  ): FormGroup {
+    const isExisting = !!existing;
+
+    return this.fb.group({
+      // read-only
+      tableName: new FormControl({ value: tableName, disabled: true }),
+      columnName: new FormControl({ value: columnName, disabled: true }),
+
+      // editable
+      uiFieldName: new FormControl(isExisting ? existing.system_field_name : null, [
+        Validators.required,
+        Validators.minLength(5),
+        Validators.maxLength(50),
+        Validators.pattern(/^[A-Za-z ]+$/),
+      ]),
+
+      formField: new FormControl(isExisting ? existing.form_field : null, Validators.required),
+      fieldCategory: new FormControl(isExisting ? existing.field_category : null, Validators.required),
+
+      fieldRequirement: new FormControl(isExisting ? existing.field_requirement : null),
+      dependentField: new FormControl(isExisting ? existing.dependent_field : null),
+
+      // meta read-only
+      fieldDataType: new FormControl({ value: meta?.field_data_type ?? null, disabled: true }),
+      fieldMaximumLength: new FormControl({ value: meta?.field_maximum_length ?? null, disabled: true }),
+      numericPrecision: new FormControl({ value: meta?.numeric_precision ?? null, disabled: true }),
+      numericScale: new FormControl({ value: meta?.numeric_scale ?? null, disabled: true }),
+
+      defaultValue: new FormControl(isExisting ? existing.field_default_value : null),
+
+      editableByUser: new FormControl(isExisting ? existing.field_editable : null, Validators.required),
+      validationRuleExists: new FormControl(
+        isExisting ? existing.field_validation_rule_exists : null,
+        Validators.required
+      ),
+      derivationRuleExists: new FormControl(
+        isExisting ? existing.field_derivation_rule_exists : null,
+        Validators.required
+      ),
+
+      allowedValues: new FormControl(isExisting ? existing.field_allowed_values : null),
+      standardValues: new FormControl(isExisting ? existing.field_standard_values : null),
+
+      positionInTemplate: new FormControl(
+        isExisting ? existing.field_position_in_template : null,
+        Validators.required
+      ),
+    });
+  }
+
+  // ---------------- RULES ENGINE ----------------
+  private wireRules(row: FormGroup): void {
+    row.get('fieldCategory')!.valueChanges.subscribe(() => this.applyRules(row));
+    row.get('fieldRequirement')!.valueChanges.subscribe(() => this.applyRules(row));
+    row.get('allowedValues')!.valueChanges.subscribe(() => this.applyRules(row));
+  }
+
+  private applyRules(row: FormGroup): void {
+    const fieldCategory = row.get('fieldCategory')!;
+    const fieldRequirement = row.get('fieldRequirement')!;
+    const dependentField = row.get('dependentField')!;
+    const allowedValues = row.get('allowedValues')!;
+    const standardValues = row.get('standardValues')!;
+
+    // 6) Field Requirement required unless category is Derived
+    if (fieldCategory.value === 'Derived') {
+      fieldRequirement.setValue(null, { emitEvent: false });
+      fieldRequirement.clearValidators();
+      fieldRequirement.disable({ emitEvent: false });
+    } else {
+      fieldRequirement.enable({ emitEvent: false });
+      fieldRequirement.setValidators([Validators.required]);
+    }
+    fieldRequirement.updateValueAndValidity({ emitEvent: false });
+
+    // 7) Dependent Field required only when "Conditionally mandatory"
+    if (fieldRequirement.value === 'Conditionally mandatory') {
+      dependentField.enable({ emitEvent: false });
+      dependentField.setValidators([Validators.required]);
+    } else {
+      dependentField.setValue(null, { emitEvent: false });
+      dependentField.clearValidators();
+      dependentField.disable({ emitEvent: false });
+    }
+    dependentField.updateValueAndValidity({ emitEvent: false });
+
+    // 16/17) Standard values enabled only when allowedValues = STANDARD_VALUES
+    if (allowedValues.value === 'STANDARD_VALUES') {
+      standardValues.enable({ emitEvent: false });
+      standardValues.setValidators([Validators.required, this.standardValuesValidator()]);
+    } else {
+      standardValues.setValue(null, { emitEvent: false });
+      standardValues.clearValidators();
+      standardValues.disable({ emitEvent: false });
+    }
+    standardValues.updateValueAndValidity({ emitEvent: false });
+  }
+
+  // ---------------- HELPERS ----------------
+  getDependentOptions(rowIndex: number): string[] {
+    return this.rows.controls
+      .map((r, idx) => (idx === rowIndex ? null : r.get('uiFieldName')?.value))
+      .filter((v) => !!v);
+  }
+
+  // row is "started" if any meaningful field is filled (prevents drafts blocking save)
+  private isStartedRow(row: AbstractControl): boolean {
+    const keys = ['uiFieldName', 'formField', 'fieldCategory', 'positionInTemplate'];
+    return keys.some((k) => {
+      const v = row.get(k)?.value;
+      return v !== null && v !== undefined && String(v).trim() !== '';
+    });
+  }
+
+  // ---------------- VALIDATORS ----------------
+  private uniqueUiFieldNameValidator(): ValidatorFn {
+    return (fa: AbstractControl): ValidationErrors | null => {
+      const arr = fa as FormArray;
+      const seen = new Map<string, number>();
+
+      for (let i = 0; i < arr.length; i++) {
+        const row = arr.at(i);
+        const name = (row.get('uiFieldName')?.value ?? '').trim().toLowerCase();
+        if (!name) continue;
+
+        if (seen.has(name)) {
+          row.get('uiFieldName')?.setErrors({ ...(row.get('uiFieldName')?.errors ?? {}), duplicate: true });
+        } else {
+          seen.set(name, i);
+          // don’t clear other errors; only clear duplicate if present
+          const ctrl = row.get('uiFieldName');
+          if (ctrl?.errors?.['duplicate']) {
+            const { duplicate, ...rest } = ctrl.errors;
+            ctrl.setErrors(Object.keys(rest).length ? rest : null);
+          }
+        }
+      }
+      return null;
+    };
+  }
+
+  private standardValuesValidator(): ValidatorFn {
+    return (control: AbstractControl): ValidationErrors | null => {
+      const raw = (control.value ?? '').toString().trim();
+      if (!raw) return null;
+
+      const items = raw.split(',').map((x) => x.trim()).filter(Boolean);
+      if (items.length > 10) return { maxStandardValues: true };
+
+      const bad = items.some((v) => {
+        if (/^\d+$/.test(v)) return false;        // numeric
+        if (/^".+"$/.test(v)) return false;       // "text" or "A1"
+        return true;
+      });
+
+      return bad ? { invalidStandardValue: true } : null;
+    };
+  }
+
+  // ---------------- ERROR TEXT ----------------
+  getError(rowIndex: number, controlName: string): string {
+    const ctrl = (this.rows.at(rowIndex) as FormGroup).get(controlName);
+    if (!ctrl || !ctrl.touched || !ctrl.errors) return '';
+
+    if (ctrl.errors['required']) return 'Required';
+    if (ctrl.errors['minlength']) return 'Min 5 characters';
+    if (ctrl.errors['maxlength']) return 'Max 50 characters';
+    if (ctrl.errors['pattern']) return 'Only A-Z and spaces allowed';
+    if (ctrl.errors['duplicate']) return 'UI Field Name must be unique';
+    if (ctrl.errors['maxStandardValues']) return 'Max 10 comma-separated values';
+    if (ctrl.errors['invalidStandardValue']) return 'Use numbers OR quoted values like "ABC"';
+
+    return 'Invalid value';
+  }
+
+  // ---------------- SAVE (final) ----------------
+  save(): void {
+    let hasError = false;
+
+    this.rows.controls.forEach((row) => {
+      // Ignore locked existing rows and untouched draft rows
+      if (row.disabled) return;
+      if (!this.isStartedRow(row)) return;
+
+      row.markAllAsTouched();
+      row.updateValueAndValidity({ emitEvent: false });
+
+      if (row.invalid) hasError = true;
+    });
+
+    if (hasError) {
+      console.log('Save Failed');
+      return;
+    }
+
+    const payload = this.rows.controls
+      .filter((row) => row.enabled && this.isStartedRow(row))
+      .map((row) => row.getRawValue());
+
+    console.log('FINAL PAYLOAD', payload);
+  }
+}
+
+
+
+
+///// HTML ///////
+
+<form [formGroup]="form">
+  <table mat-table [dataSource]="rows.controls" formArrayName="rows" class="grid">
+    <ng-container *ngFor="let col of displayedColumns" [matColumnDef]="col">
+      <th mat-header-cell *matHeaderCellDef>{{ col }}</th>
+
+      <td mat-cell *matCellDef="let row; let i = index" [formGroupName]="i">
+        <!-- READONLY FIELDS -->
+        <ng-container *ngIf="['tableName','columnName','fieldDataType','fieldMaximumLength','numericPrecision','numericScale'].includes(col)">
+          {{ (row as any).get(col)?.value }}
+        </ng-container>
+
+        <!-- INPUT FIELDS -->
+        <ng-container *ngIf="['uiFieldName','defaultValue','standardValues','positionInTemplate'].includes(col)">
+          <input matInput [formControlName]="col" />
+          <mat-error *ngIf="getError(i, col)">{{ getError(i, col) }}</mat-error>
+        </ng-container>
+
+        <!-- BMO SELECTS (bind REAL FormControl via internalControl) -->
+        <ng-container *ngIf="col === 'formField'">
+          <bmo-select-box
+            [options]="formFieldOptions"
+            [internalControl]="(row as any).get('formField')"
+            [errorMessage]="getError(i, 'formField')">
+          </bmo-select-box>
+        </ng-container>
+
+        <ng-container *ngIf="col === 'fieldCategory'">
+          <bmo-select-box
+            [options]="fieldCategoryOptions"
+            [internalControl]="(row as any).get('fieldCategory')"
+            [errorMessage]="getError(i, 'fieldCategory')">
+          </bmo-select-box>
+        </ng-container>
+
+        <ng-container *ngIf="col === 'fieldRequirement'">
+          <bmo-select-box
+            [options]="fieldRequirementOptions"
+            [internalControl]="(row as any).get('fieldRequirement')"
+            [errorMessage]="getError(i, 'fieldRequirement')">
+          </bmo-select-box>
+        </ng-container>
+
+        <ng-container *ngIf="col === 'dependentField'">
+          <bmo-select-box
+            [options]="getDependentOptions(i)"
+            [internalControl]="(row as any).get('dependentField')"
+            [errorMessage]="getError(i, 'dependentField')">
+          </bmo-select-box>
+        </ng-container>
+
+        <ng-container *ngIf="col === 'editableByUser'">
+          <bmo-select-box
+            [options]="yesNoOptions"
+            [internalControl]="(row as any).get('editableByUser')"
+            [errorMessage]="getError(i, 'editableByUser')">
+          </bmo-select-box>
+        </ng-container>
+
+        <ng-container *ngIf="col === 'validationRuleExists'">
+          <bmo-select-box
+            [options]="yesNoOptions"
+            [internalControl]="(row as any).get('validationRuleExists')"
+            [errorMessage]="getError(i, 'validationRuleExists')">
+          </bmo-select-box>
+        </ng-container>
+
+        <ng-container *ngIf="col === 'derivationRuleExists'">
+          <bmo-select-box
+            [options]="yesNoOptions"
+            [internalControl]="(row as any).get('derivationRuleExists')"
+            [errorMessage]="getError(i, 'derivationRuleExists')">
+          </bmo-select-box>
+        </ng-container>
+
+        <ng-container *ngIf="col === 'allowedValues'">
+          <bmo-select-box
+            [options]="allowedValuesOptions"
+            [internalControl]="(row as any).get('allowedValues')"
+            [errorMessage]="getError(i, 'allowedValues')">
+          </bmo-select-box>
+        </ng-container>
+      </td>
+    </ng-container>
+
+    <tr mat-header-row *matHeaderRowDef="displayedColumns; sticky: true"></tr>
+    <tr mat-row *matRowDef="let r; columns: displayedColumns"></tr>
+  </table>
+
+  <button mat-raised-button color="primary" (click)="save()">Save</button>
+</form>
