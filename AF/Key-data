@@ -1,0 +1,24 @@
+type TargetTableRow = {
+  target_table: string;
+  key_columns: string | null;
+};
+
+keyColumnMap: Record<string, string[]> = {};   // ✅ this is what your table should use
+
+private splitKeyColumns(s: string | null | undefined): string[] {
+  return (s ?? '')
+    .split(',')
+    .map(x => x.trim())
+    .filter(Boolean);
+}
+
+buildKeyColumnData() {
+  this.keyColumnMap = (this.savedTargetTables as TargetTableRow[]).reduce<Record<string, string[]>>(
+    (acc, d) => {
+      if (!d?.target_table) return acc;
+      acc[d.target_table] = this.splitKeyColumns(d.key_columns);
+      return acc;
+    },
+    {} // ✅ important initialValue
+  );
+}
