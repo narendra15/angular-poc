@@ -430,3 +430,53 @@ export class FieldDefinitionGridComponent implements OnInit {
 
   <button mat-raised-button color="primary" (click)="save()">Save</button>
 </form>
+
+
+
+//////////////
+
+
+isInvalid(i: number, controlName: string): boolean {
+  const ctrl = (this.rows.at(i) as FormGroup).get(controlName);
+  return !!ctrl && ctrl.invalid && (ctrl.touched || ctrl.dirty);
+}
+
+getError(i: number, controlName: string): string {
+  const ctrl = (this.rows.at(i) as FormGroup).get(controlName);
+  if (!ctrl || !(ctrl.touched || ctrl.dirty) || !ctrl.errors) return '';
+
+  const e = ctrl.errors;
+
+  if (e['required']) return 'Required';
+  if (e['minlength']) return `Min ${e['minlength'].requiredLength} characters`;
+  if (e['maxlength']) return `Max ${e['maxlength'].requiredLength} characters`;
+  if (e['pattern']) return 'Only A-Z and spaces allowed';
+  if (e['duplicate']) return 'UI Field Name must be unique';
+  if (e['maxStandardValues']) return 'Max 10 comma-separated values';
+  if (e['invalidStandardValue']) return 'Use numbers OR quoted values like "ABC"';
+
+  return 'Invalid value';
+}
+
+
+
+Input
+
+<ng-container *ngIf="['uiFieldName','defaultValue','standardValues','positionInTemplate'].includes(col)">
+  <mat-form-field appearance="outline" style="width: 100%;">
+    <input matInput [formControlName]="col" />
+    <mat-error *ngIf="isInvalid(i, col)">{{ getError(i, col) }}</mat-error>
+  </mat-form-field>
+</ng-container>
+
+
+
+DD
+
+<ng-container *ngIf="col === 'formField'">
+  <bmo-select-box
+    [options]="formFieldOptions"
+    [internalControl]="(row as any).get('formField')"
+    [errorMessage]="getError(i, 'formField')">
+  </bmo-select-box>
+</ng-container>
