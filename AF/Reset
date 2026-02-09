@@ -1,0 +1,60 @@
+resetCounter = 0;
+
+onSaveSuccessFromApi() {
+  // after POST success
+  this.resetCounter++;   // triggers child reset
+}
+
+
+
+this.onSaveSuccessFromApi();
+
+
+
+<app-add-tables
+  [resetCounter]="resetCounter"
+></app-add-tables>
+
+
+
+@Input() resetCounter = 0;
+
+
+
+
+ngOnChanges(changes: SimpleChanges): void {
+  if (changes['resetCounter'] && !changes['resetCounter'].firstChange) {
+    this.resetDraftToInitial();
+  }
+}
+
+
+
+
+
+private resetDraftToInitial(): void {
+  this.draftForm.reset();
+
+  this.draftForm.patchValue({
+    targetDatabaseType: null,
+    targetDatabase: null,
+    targetSchema: null,
+    targetTableType: null,
+    targetTable: null,
+    keyColumns: [],
+  });
+
+  this.draftForm.controls.targetDatabase.disable();
+  this.draftForm.controls.targetSchema.disable();
+  this.draftForm.controls.targetTable.disable();
+  this.draftForm.controls.keyColumns.disable();
+
+  this.targetDatabaseOptions.set([]);
+  this.targetSchemaOptions.set([]);
+  this.targetTableOptions.set([]);
+  this.keyColumnOptions.set([]);
+}
+
+
+
+
