@@ -269,6 +269,27 @@ getAvailableOptions(
 }
 
 
+/** Values used in a column across ALL rows (existing + draft). */
+private getUsedValuesAllRows(columnKey: string): Set<string> {
+  return new Set(
+    this.rows
+      .map(r => r.values[columnKey])
+      .filter((v): v is string => !!v)
+  );
+}
+
+/** True if ANY column has no options left for a NEW row */
+get isAddAnotherDisabled(): boolean {
+  if (this.rows.length >= this.maxRows) return true;
+  if (!this.columns.length) return true;
+
+  // if any column is exhausted, can't create a valid new row
+  return this.columns.some(col => {
+    const used = this.getUsedValuesAllRows(col.columnKey);
+    const remaining = col.options.filter(opt => !used.has(opt));
+    return remaining.length === 0;
+  });
+}
 
 
 
