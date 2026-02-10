@@ -1,0 +1,320 @@
+import { Component, OnInit, Output, EventEmitter } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+
+import { MatTableModule } from '@angular/material/table';
+import { MatButtonModule } from '@angular/material/button';
+import { MatTooltipModule } from '@angular/material/tooltip';
+
+interface GridColumn {
+  columnKey: string;
+  header: string;
+  options: string[];
+  tooltip: string;
+  meta: {
+    targetDatabaseType: string;
+    targetDatabase: string;
+    targetSchema: string;
+    targetTable: string;
+    targetTableType: string;
+  };
+}
+
+interface KeyColumnRow {
+  index: number;
+  isDraft: boolean;
+  values: Record<string, string>;
+}
+
+@Component({
+  selector: 'app-add-key-column',
+  standalone: true,
+  templateUrl: './add-key-column.component.html',
+  imports: [
+    CommonModule,
+    FormsModule,
+    MatTableModule,
+    MatButtonModule,
+    MatTooltipModule
+  ]
+})
+export class AddKeyColumnComponent implements OnInit {
+
+  /* ---------------- OUTPUT ---------------- */
+  @Output() saveKeyColumns = new EventEmitter<any[][]>();
+
+  /* ---------------- STATE ---------------- */
+  columns: GridColumn[] = [];
+  rows: KeyColumnRow[] = [];
+  displayedColumns: string[] = [];
+
+  maxRows = 10;
+  isLoading = true;
+
+  /* ---------------- INIT ---------------- */
+  ngOnInit(): void {
+    this.loadData();
+  }
+
+  /* ---------------- API LOAD ---------------- */
+
+  loadData(): void {
+    // MOCK DATA — replace with real API calls
+
+    const gridData = [
+      {
+        target_database_type: 'redshift',
+        target_database: 'dev_rfdh',
+        target_schema: 'l3_ifrsg',
+        target_table: 'fcy_clt',
+        target_table_type: 'fact',
+        key_columns: 'actv_ind, bsn_dt'
+      },
+      {
+        target_database_type: 'redshift',
+        target_database: 'bpa_preprd_11_s3_rfdh',
+        target_schema: 'l1_sap_s4_rfdh',
+        target_table: '11_ref_sap_s4_lu_tp_fs_ac_grp',
+        target_table_type: 'dimension',
+        key_columns: 'etl_audit_id, etl_timestamp'
+      }
+    ];
+
+    const existingMappings = [
+      {
+        key_mapping_id: 'KM100000016',
+        target_database_type: 'redshift',
+        target_database: 'dev_rfdh',
+        target_schema: 'l3_ifrsg',
+        target_table: 'fcy_clt',
+        target_table_key_column: 'actv_ind'
+      }
+    ];
+
+    this.columns = this.buildColumns(gridData);
+    this.rows = this.buildExistingRows(existingMappings);
+
+    this.displayedColumns = [
+      'mapping',
+      ...this.columns.map(c => c.columnKey),
+      'actions'
+    ];
+
+    // Auto-add first draft if nothing exists
+    if (!this.rows.length) {
+      this.addDraftRow();
+    }
+
+    this.isLoading = false;
+  }
+
+  /* ---------------- COLUMN BUILD ---------------- */
+
+  buildColumns(data: any[]): GridColumn[] {
+    return data.map(item => {
+      const columnKey = [
+        item.target_database_type,
+        item.target_database,
+        item.target_schema,
+        item.target_table
+      ].join('|');
+
+      return {
+        columnKey,
+        header: item.target_table,
+        options: item.key_columns.split(',').map((v: string) => v.trim()),
+        tooltip: `Database: ${item.target_database}\nSchema: ${item.target_schema}`,
+        meta: {
+          targetDatabaseType: item.target_database_type,
+          targetDatabase: item.target_database,
+          targetSchema: item.target_schema,
+          targetTable: item.target_table,
+          targetTableType: item.target_table_type
+        }
+      };
+    });
+  }
+
+  /* ---------------- EXISTING ROWS ---------------- */
+
+  buildExistingRows(data: any[]): KeyColumnRow[] {
+    const map = new Map<string, KeyColumnRow>();
+
+    data.forEach(item => {
+      const rowId = item.key_mapping_id;
+
+      const columnKey = [
+        item.target_database_type,
+        item.target_database,
+        item.target_schema,
+        item.target_table
+      ].join('|');
+
+      if (!map.has(rowId)) {
+        map.set(rowId, {
+          index: map.size + 1,
+          isDraft: false,
+          values: {}
+        });
+      }
+
+      map.get(rowId)!.values[columnKey] =
+        item.target_table_key_column;
+    });
+
+    return Array.from(map.values());
+  }
+
+  /* ---------------- ADD / CANCEL ---------------- */
+
+  addDraftRow(): void {
+    if (this.rows.length >= this.maxRows) return;
+
+    const newRow: KeyColumnRow = {
+      index: this.rows.length + 1,
+      isDraft: true,
+      values: {}
+    };
+
+    this.rows = [...this.rows, newRow];
+  }
+
+  cancelRow(rowIndex: number): void {
+    this.rows = this.rows
+      .filter(r => r.index !== rowIndex)
+      .map((r, i) => ({ ...r, index: i + 1 }));
+  }
+
+  /* ---------------- SAVE ---------------- */
+
+  saveAll(): void {
+    const payload = this.buildKeyColumnsPayload();
+    if (!payload.length) return;
+
+    this.saveKeyColumns.emit(payload);
+
+    // mark drafts as saved
+    this.rows = this.rows.map(r =>
+      r.isDraft ? { ...r, isDraft: false } : r
+    );
+  }
+
+  buildKeyColumnsPayload(): any[][] {
+    return this.rows
+      .filter(r => r.isDraft)
+      .map(row =>
+        Object.entries(row.values).map(([columnKey, value]) => {
+          const col = this.columns.find(c => c.columnKey === columnKey)!;
+
+          return {
+            target_database_type: col.meta.targetDatabaseType,
+            target_database: col.meta.targetDatabase,
+            target_schema: col.meta.targetSchema,
+            target_table: col.meta.targetTable,
+            target_table_type: col.meta.targetTableType,
+            target_table_key_column: value
+          };
+        })
+      );
+  }
+
+  /* ---------------- HELPERS ---------------- */
+
+  get hasDraftRows(): boolean {
+    return this.rows.some(r => r.isDraft);
+  }
+
+  get isSaveDisabled(): boolean {
+    return this.rows
+      .filter(r => r.isDraft)
+      .some(r =>
+        this.columns.some(c => !r.values[c.columnKey])
+      );
+  }
+}
+
+
+////////// HTML ///////////
+
+<div *ngIf="!isLoading">
+
+  <table mat-table [dataSource]="rows" class="mat-elevation-z1">
+
+    <!-- Mapping Column -->
+    <ng-container matColumnDef="mapping">
+      <th mat-header-cell *matHeaderCellDef>
+        Target Tables
+      </th>
+      <td mat-cell *matCellDef="let row">
+        Key Mapping {{ row.index }}
+      </td>
+    </ng-container>
+
+    <!-- Dynamic Columns -->
+    <ng-container *ngFor="let col of columns" [matColumnDef]="col.columnKey">
+
+      <th
+        mat-header-cell
+        *matHeaderCellDef
+        [matTooltip]="col.tooltip"
+        matTooltipPosition="above"
+        class="header-cell">
+        {{ col.header }}
+      </th>
+
+      <td mat-cell *matCellDef="let row">
+        <ng-container *ngIf="row.isDraft; else readOnly">
+          <bmo-select
+            [options]="col.options"
+            [(ngModel)]="row.values[col.columnKey]"
+            placeholder="Select">
+          </bmo-select>
+        </ng-container>
+
+        <ng-template #readOnly>
+          {{ row.values[col.columnKey] }}
+        </ng-template>
+      </td>
+
+    </ng-container>
+
+    <!-- Actions -->
+    <ng-container matColumnDef="actions">
+      <th mat-header-cell *matHeaderCellDef></th>
+      <td mat-cell *matCellDef="let row">
+        <button
+          *ngIf="row.isDraft"
+          mat-button
+          color="warn"
+          (click)="cancelRow(row.index)">
+          Cancel
+        </button>
+      </td>
+    </ng-container>
+
+    <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
+    <tr mat-row *matRowDef="let row; columns: displayedColumns"></tr>
+
+  </table>
+
+  <!-- Footer Actions -->
+  <div style="margin-top:16px; display:flex; gap:12px">
+    <button
+      mat-raised-button
+      color="primary"
+      (click)="saveAll()"
+      [disabled]="!hasDraftRows || isSaveDisabled">
+      Save
+    </button>
+
+    <button
+      mat-stroked-button
+      color="primary"
+      (click)="addDraftRow()"
+      [disabled]="rows.length >= maxRows">
+      Add another
+    </button>
+  </div>
+
+</div>
+
