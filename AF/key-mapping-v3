@@ -239,6 +239,39 @@ export class AddKeyColumnComponent implements OnInit {
         this.columns.some(c => !r.values[c.columnKey])
       );
   }
+
+
+
+
+/** Values already used in the SAME column by OTHER rows (draft + existing). */
+private getUsedValuesForColumn(columnKey: string, currentRow: KeyColumnRow): string[] {
+  return this.rows
+    .filter(r => r !== currentRow)              // exclude current row
+    .map(r => r.values[columnKey])
+    .filter((v): v is string => !!v);           // remove undefined/null/empty
+}
+
+/**
+ * Options shown in dropdown for a given cell:
+ * - remove options already selected in other rows under the same column
+ * - BUT keep the currently selected value (so it doesn't disappear)
+ */
+getAvailableOptions(
+  columnKey: string,
+  currentRow: KeyColumnRow,
+  baseOptions: string[]
+): string[] {
+  const used = new Set(this.getUsedValuesForColumn(columnKey, currentRow));
+  const current = currentRow.values[columnKey];
+
+  // Ensure current selection remains visible even if it's in "used" set (edge cases)
+  return baseOptions.filter(opt => !used.has(opt) || opt === current);
+}
+
+
+
+
+
 }
 
 
