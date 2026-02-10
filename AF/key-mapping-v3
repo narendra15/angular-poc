@@ -128,7 +128,32 @@ export class AddKeyColumnComponent implements OnInit {
   /* ---------------- EXISTING ROWS ---------------- */
 
   buildExistingRows(data: any[]): KeyColumnRow[] {
-    return [];
+    const map = new Map<string, KeyColumnRow>();
+
+    data.forEach(item => {
+      const rowId = item.key_mapping_id;
+
+      const columnKey = [
+        item.target_database_type,
+        item.target_database,
+        item.target_schema,
+        item.target_table
+      ].join('|');
+
+      if (!map.has(rowId)) {
+        map.set(rowId, {
+          index: map.size + 1,
+          isDraft: false,
+          values: {},
+          controls: {}
+        });
+      }
+
+      map.get(rowId)!.values[columnKey] =
+        item.target_table_key_column;
+    });
+
+    return Array.from(map.values());
   }
 
   /* ---------------- ADD / CANCEL ---------------- */
