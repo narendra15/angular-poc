@@ -25,6 +25,7 @@ interface KeyColumnRow {
   isDraft: boolean;
   values: Record<string, string>;
   controls: Record<string, FormControl>;
+  errors?: Record<string, string>;
 }
 
 @Component({
@@ -57,7 +58,7 @@ export class AddKeyColumnComponent implements OnInit {
     this.loadData();
   }
 
-  /* ---------------- LOAD MOCK DATA (replace with APIs) ---------------- */
+  /* ---------------- MOCK LOAD (replace with APIs) ---------------- */
 
   loadData(): void {
     const gridData = [
@@ -79,16 +80,7 @@ export class AddKeyColumnComponent implements OnInit {
       }
     ];
 
-    const existingMappings = [
-      {
-        key_mapping_id: 'KM100000016',
-        target_database_type: 'redshift',
-        target_database: 'dev_rfdh',
-        target_schema: 'l3_ifrsg',
-        target_table: 'fcy_clt',
-        target_table_key_column: 'actv_ind'
-      }
-    ];
+    const existingMappings = [];
 
     this.columns = this.buildColumns(gridData);
     this.rows = this.buildExistingRows(existingMappings);
@@ -99,7 +91,6 @@ export class AddKeyColumnComponent implements OnInit {
       'actions'
     ];
 
-    // Auto add first draft row if nothing exists
     if (!this.rows.length) {
       this.addDraftRow();
     }
@@ -134,35 +125,10 @@ export class AddKeyColumnComponent implements OnInit {
     });
   }
 
-  /* ---------------- BUILD EXISTING ROWS ---------------- */
+  /* ---------------- EXISTING ROWS ---------------- */
 
   buildExistingRows(data: any[]): KeyColumnRow[] {
-    const map = new Map<string, KeyColumnRow>();
-
-    data.forEach(item => {
-      const rowId = item.key_mapping_id;
-
-      const columnKey = [
-        item.target_database_type,
-        item.target_database,
-        item.target_schema,
-        item.target_table
-      ].join('|');
-
-      if (!map.has(rowId)) {
-        map.set(rowId, {
-          index: map.size + 1,
-          isDraft: false,
-          values: {},
-          controls: {}
-        });
-      }
-
-      map.get(rowId)!.values[columnKey] =
-        item.target_table_key_column;
-    });
-
-    return Array.from(map.values());
+    return [];
   }
 
   /* ---------------- ADD / CANCEL ---------------- */
@@ -179,7 +145,8 @@ export class AddKeyColumnComponent implements OnInit {
       index: this.rows.length + 1,
       isDraft: true,
       values: {},
-      controls
+      controls,
+      errors: {}
     };
 
     this.rows = [...this.rows, newRow];
@@ -191,13 +158,39 @@ export class AddKeyColumnComponent implements OnInit {
       .map((r, i) => ({ ...r, index: i + 1 }));
   }
 
-  /* ---------------- SELECTION HANDLER ---------------- */
+  /* ---------------- UNIQUENESS ENFORCEMENT ---------------- */
+
+  private getUsedValuesForColumn(
+    columnKey: string,
+    currentRow: KeyColumnRow
+  ): string[] {
+    return this.rows
+      .filter(r => r !== currentRow)
+      .map(r => r.values[columnKey])
+      .filter(Boolean);
+  }
 
   onSelectionChange(
     row: KeyColumnRow,
     columnKey: string,
     value: string
   ): void {
+
+    const usedValues = this.getUsedValuesForColumn(columnKey, row);
+
+    if (usedValues.includes(value)) {
+      // ❌ Duplicate selection – revert
+      row.controls[columnKey].setValue(null, { emitEvent: false });
+      delete row.values[columnKey];
+
+      row.errors![columnKey] =
+        'This key column is already selected in another row';
+
+      return;
+    }
+
+    // ✅ Valid selection
+    delete row.errors?.[columnKey];
     row.values[columnKey] = value;
   }
 
@@ -209,7 +202,6 @@ export class AddKeyColumnComponent implements OnInit {
 
     this.saveKeyColumns.emit(payload);
 
-    // mark drafts as saved
     this.rows = this.rows.map(r =>
       r.isDraft ? { ...r, isDraft: false } : r
     );
@@ -248,6 +240,7 @@ export class AddKeyColumnComponent implements OnInit {
       );
   }
 }
+
 
 
 
