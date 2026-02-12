@@ -1,0 +1,359 @@
+import { Component, OnDestroy, OnInit } from '@angular/core';
+import { FormBuilder, FormControl, FormGroup, Validators } from '@angular/forms';
+import { Subscription } from 'rxjs';
+
+export interface SelectOption {
+  label: string;
+  value: string;
+}
+
+type RuleType = 'Validation' | 'Derivation';
+
+@Component({
+  selector: 'app-validation-derivation-rules',
+  templateUrl: './validation-derivation-rules.html',
+  styleUrls: ['./validation-derivation-rules.scss'],
+})
+export class ValidationDerivationRules implements OnInit, OnDestroy {
+  // ---- UI state ----
+  loadingInitial = false;
+  loadingUserFields = false;
+  submittingRuleType = false;
+
+  frozen = false;
+  apiSuccess = false;
+
+  errorMsg = '';
+
+  // ---- dropdown options ----
+  entityOptions: SelectOption[] = [];
+  adjTypeOptions: SelectOption[] = [];
+  userFieldOptions: SelectOption[] = [];
+  ruleTypeOptions: SelectOption[] = [
+    { label: 'Validation', value: 'Validation' },
+    { label: 'Derivation', value: 'Derivation' },
+  ];
+
+  // ---- form ----
+  form!: FormGroup<{
+    entity: FormControl<string | null>;
+    adjustmentType: FormControl<string | null>;
+    userFieldName: FormControl<string | null>;
+    ruleType: FormControl<RuleType | null>;
+  }>;
+
+  private subs: Subscription[] = [];
+
+  constructor(
+    private fb: FormBuilder,
+    private _apiService: any // keep your actual type
+  ) {}
+
+  ngOnInit(): void {
+    this.buildForm();
+    this.loadEntityAndAdjustmentTypes();
+    this.wireUpDependentDropdowns();
+  }
+
+  private buildForm(): void {
+    this.form = this.fb.group({
+      entity: this.fb.control<string | null>(null, { validators: [Validators.required] }),
+      adjustmentType: this.fb.control<string | null>({ value: null, disabled: true }, { validators: [Validators.required] }),
+      userFieldName: this.fb.control<string | null>({ value: null, disabled: true }, { validators: [Validators.required] }),
+      ruleType: this.fb.control<RuleType | null>({ value: null, disabled: true }, { validators: [Validators.required] }),
+    });
+  }
+
+  // ---------------------------
+  // API #1 (INIT): Entities + Adj Types
+  // ---------------------------
+  private loadEntityAndAdjustmentTypes(): void {
+    this.loadingInitial = true;
+    this.errorMsg = '';
+
+    this._apiService.getData('adj-types/').subscribe({
+      next: (resp: any) => {
+        console.log('resp----', resp);
+
+        this.loadingInitial = false;
+
+        // Set entity dropdown
+        this.entityOptions = this.toOptions(
+          resp?.data?.entities ?? [],
+          'entity_name',
+          'entity_alias'
+        );
+
+        // Set adjustment types dropdown
+        this.adjTypeOptions = this.toOptions(
+          resp?.data?.adj_types ?? [],
+          'adj_type_name',
+          'adj_type_alias'
+        );
+
+        // Keep dependent dropdowns disabled until selection happens
+        this.form.controls.adjustmentType.disable({ emitEvent: false });
+        this.form.controls.userFieldName.disable({ emitEvent: false });
+        this.form.controls.ruleType.disable({ emitEvent: false });
+
+        this.userFieldOptions = [];
+        this.apiSuccess = false;
+        this.frozen = false;
+      },
+      error: (err: any) => {
+        this.loadingInitial = false;
+        this.errorMsg = 'Failed to load Entity / Adjustment Type options.';
+        console.error('getData adj-types error', err);
+
+        this.entityOptions = [];
+        this.adjTypeOptions = [];
+      },
+    });
+  }
+
+  // ---------------------------
+  // Dependency wiring (NO RxJS pipe)
+  // ---------------------------
+  private wireUpDependentDropdowns(): void {
+    // 1) Entity changes -> enable Adj Type, reset downstream
+    const s1 = this.form.controls.entity.valueChanges.subscribe((entityVal) => {
+      if (this.frozen) return;
+
+      this.resetFrom('entity');
+
+      if (this.isValidValue(entityVal)) {
+        this.form.controls.adjustmentType.enable({ emitEvent: false });
+      } else {
+        this.form.controls.adjustmentType.disable({ emitEvent: false });
+      }
+    });
+    this.subs.push(s1);
+
+    // 2) Adj Type changes -> call API for User Fields
+    const s2 = this.form.controls.adjustmentType.valueChanges.subscribe((adjVal) => {
+      if (this.frozen) return;
+
+      this.resetFrom('adjustmentType');
+
+      if (this.isValidValue(adjVal)) {
+        this.loadUserFields(); // API #2
+      }
+    });
+    this.subs.push(s2);
+
+    // 3) User Field changes -> enable Rule Type
+    const s3 = this.form.controls.userFieldName.valueChanges.subscribe((userFieldVal) => {
+      if (this.frozen) return;
+
+      this.resetFrom('userFieldName');
+
+      if (this.isValidValue(userFieldVal)) {
+        this.form.controls.ruleType.enable({ emitEvent: false });
+      } else {
+        this.form.controls.ruleType.disable({ emitEvent: false });
+      }
+    });
+    this.subs.push(s3);
+
+    // 4) Rule Type changes -> freeze & init API
+    const s4 = this.form.controls.ruleType.valueChanges.subscribe((ruleTypeVal) => {
+      if (this.frozen) return;
+
+      if (this.isValidValue(ruleTypeVal)) {
+        this.freezeAll(true);
+        this.initializeRules(); // API #3
+      }
+    });
+    this.subs.push(s4);
+  }
+
+  // ---------------------------
+  // API #2: Load User Fields (3rd dropdown)
+  // ---------------------------
+  private loadUserFields(): void {
+    this.loadingUserFields = true;
+    this.errorMsg = '';
+
+    const payload = {
+      entity: this.form.controls.entity.value,
+      adjustmentType: this.form.controls.adjustmentType.value,
+    };
+
+    // change endpoint as per your backend
+    this._apiService.postData('user-fields/', payload).subscribe({
+      next: (resp: any) => {
+        console.log('user fields resp----', resp);
+
+        this.loadingUserFields = false;
+
+        const list = resp?.data ?? [];
+        this.userFieldOptions = (Array.isArray(list) ? list : []).map((x: any) => ({
+          label: String(x?.user_field_name ?? '').trim(),
+          value: String(x?.user_field_name ?? '').trim(),
+        })).filter((o: SelectOption) => o.label && o.value);
+
+        if (this.userFieldOptions.length > 0) {
+          this.form.controls.userFieldName.enable({ emitEvent: false });
+        } else {
+          this.form.controls.userFieldName.disable({ emitEvent: false });
+        }
+      },
+      error: (err: any) => {
+        this.loadingUserFields = false;
+        this.errorMsg = 'Failed to load User Fields.';
+        console.error('postData user-fields error', err);
+
+        this.userFieldOptions = [];
+        this.form.controls.userFieldName.disable({ emitEvent: false });
+      },
+    });
+  }
+
+  // ---------------------------
+  // API #3: Initialize Rules (after 4th dropdown selection)
+  // ---------------------------
+  private initializeRules(): void {
+    this.submittingRuleType = true;
+    this.errorMsg = '';
+    this.apiSuccess = false;
+
+    const payload = {
+      entity: this.form.controls.entity.value,
+      adjustmentType: this.form.controls.adjustmentType.value,
+      userFieldName: this.form.controls.userFieldName.value,
+      ruleType: this.form.controls.ruleType.value,
+    };
+
+    // change endpoint as per your backend
+    this._apiService.postData('rules/initialize/', payload).subscribe({
+      next: (resp: any) => {
+        console.log('initialize rules resp----', resp);
+
+        this.submittingRuleType = false;
+        this.apiSuccess = true;
+
+        // dropdowns are already frozen
+      },
+      error: (err: any) => {
+        this.submittingRuleType = false;
+        this.errorMsg = 'Failed to initialize rules.';
+        console.error('postData rules/initialize error', err);
+
+        // if failed, allow user to modify selections again
+        this.apiSuccess = false;
+        this.freezeAll(false);
+      },
+    });
+  }
+
+  // ---------------------------
+  // Reset button: unfreeze + clear
+  // ---------------------------
+  onReset(): void {
+    this.errorMsg = '';
+    this.apiSuccess = false;
+
+    this.frozen = false;
+    this.userFieldOptions = [];
+
+    this.form.reset();
+
+    // restore dependency initial state
+    this.form.controls.adjustmentType.disable({ emitEvent: false });
+    this.form.controls.userFieldName.disable({ emitEvent: false });
+    this.form.controls.ruleType.disable({ emitEvent: false });
+  }
+
+  // ---------------------------
+  // Freeze / Unfreeze helpers
+  // ---------------------------
+  private freezeAll(shouldFreeze: boolean): void {
+    this.frozen = shouldFreeze;
+
+    if (shouldFreeze) {
+      this.form.controls.entity.disable({ emitEvent: false });
+      this.form.controls.adjustmentType.disable({ emitEvent: false });
+      this.form.controls.userFieldName.disable({ emitEvent: false });
+      this.form.controls.ruleType.disable({ emitEvent: false });
+      return;
+    }
+
+    // unfreeze: enable only the allowed controls based on current chain
+    this.form.controls.entity.enable({ emitEvent: false });
+
+    if (this.isValidValue(this.form.controls.entity.value)) {
+      this.form.controls.adjustmentType.enable({ emitEvent: false });
+    }
+
+    if (this.isValidValue(this.form.controls.adjustmentType.value) && this.userFieldOptions.length > 0) {
+      this.form.controls.userFieldName.enable({ emitEvent: false });
+    }
+
+    if (this.isValidValue(this.form.controls.userFieldName.value)) {
+      this.form.controls.ruleType.enable({ emitEvent: false });
+    }
+  }
+
+  private resetFrom(changed: 'entity' | 'adjustmentType' | 'userFieldName'): void {
+    if (changed === 'entity') {
+      this.form.controls.adjustmentType.setValue(null, { emitEvent: false });
+      this.form.controls.userFieldName.setValue(null, { emitEvent: false });
+      this.form.controls.ruleType.setValue(null, { emitEvent: false });
+
+      this.userFieldOptions = [];
+
+      this.form.controls.userFieldName.disable({ emitEvent: false });
+      this.form.controls.ruleType.disable({ emitEvent: false });
+      return;
+    }
+
+    if (changed === 'adjustmentType') {
+      this.form.controls.userFieldName.setValue(null, { emitEvent: false });
+      this.form.controls.ruleType.setValue(null, { emitEvent: false });
+
+      this.userFieldOptions = [];
+
+      this.form.controls.userFieldName.disable({ emitEvent: false });
+      this.form.controls.ruleType.disable({ emitEvent: false });
+      return;
+    }
+
+    if (changed === 'userFieldName') {
+      this.form.controls.ruleType.setValue(null, { emitEvent: false });
+      this.form.controls.ruleType.disable({ emitEvent: false });
+    }
+  }
+
+  // ---------------------------
+  // Options helper (massage)
+  // ---------------------------
+  private toOptions(list: any[], labelKey: string, valueKey: string): SelectOption[] {
+    if (!Array.isArray(list)) return [];
+
+    const seen = new Set<string>();
+    const out: SelectOption[] = [];
+
+    for (const row of list) {
+      const label = String(row?.[labelKey] ?? '').trim();
+      const value = String(row?.[valueKey] ?? '').trim();
+
+      if (!label || !value) continue;
+      if (seen.has(value)) continue;
+
+      seen.add(value);
+      out.push({ label, value });
+    }
+
+    out.sort((a, b) => a.label.localeCompare(b.label));
+    return out;
+  }
+
+  private isValidValue(v: any): boolean {
+    return v !== null && v !== undefined && String(v).trim().length > 0;
+  }
+
+  ngOnDestroy(): void {
+    this.subs.forEach((s) => s.unsubscribe());
+    this.subs = [];
+  }
+}
