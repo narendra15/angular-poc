@@ -1,0 +1,575 @@
+import { Component, EventEmitter, Input, OnChanges, Output, SimpleChanges } from '@angular/core';
+import {
+  AbstractControl,
+  FormArray,
+  FormBuilder,
+  FormControl,
+  FormGroup,
+  ValidationErrors,
+  ValidatorFn,
+  Validators,
+} from '@angular/forms';
+import { Observable, of } from 'rxjs';
+import { catchError, finalize, map } from 'rxjs/operators';
+
+type DependencyCriteria = 'On_Rule_Satidfied' | 'On_Rule_Not_Satisfied';
+type InputType = 'User Field Name' | 'SQL' | 'Literal' | 'List';
+
+interface SelectOption<T = any> {
+  label: string;
+  value: T;
+}
+
+@Component({
+  selector: 'app-derivation-rules-child',
+  templateUrl: './derivation-rules-child.component.html',
+  styleUrls: ['./derivation-rules-child.component.scss'],
+})
+export class DerivationRulesChildComponent implements OnChanges {
+  // ---------------------------
+  // Inputs/Outputs
+  // ---------------------------
+  @Input() existingRuleNames: string[] = [];
+  @Input() existingInputNames: string[] = [];
+  @Input() existingFormulaNames: string[] = [];
+  @Input() userFieldNameOptions: string[] = [];
+
+  /**
+   * Optional SQL validation function provided by parent
+   * (sql) => this.http.post('/validate-sql', { sql })
+   * expected: { success: boolean; message?: string }
+   */
+  @Input() validateSqlFn?: (sqlQuery: string) => Observable<{ success: boolean; message?: string }>;
+
+  @Output() saveDerivationRule = new EventEmitter<any>();
+
+  // ---------------------------
+  // Constants
+  // ---------------------------
+  readonly INPUT_TYPE_UFN: InputType = 'User Field Name';
+  readonly INPUT_TYPE_SQL: InputType = 'SQL';
+  readonly INPUT_TYPE_LITERAL: InputType = 'Literal';
+  readonly INPUT_TYPE_LIST: InputType = 'List';
+
+  // ---------------------------
+  // UI Options
+  // ---------------------------
+  dependencyCriteriaOptions: SelectOption<DependencyCriteria>[] = [
+    { label: 'On_Rule_Satidfied', value: 'On_Rule_Satidfied' },
+    { label: 'On_Rule_Not_Satisfied', value: 'On_Rule_Not_Satisfied' },
+  ];
+
+  dependentRuleOptions: SelectOption<string | null>[] = [];
+
+  inputTypeOptions: SelectOption<InputType>[] = [
+    { label: 'User Field Name', value: 'User Field Name' },
+    { label: 'SQL', value: 'SQL' },
+    { label: 'Literal', value: 'Literal' },
+    { label: 'List', value: 'List' },
+  ];
+
+  userFieldSelectOptions: SelectOption<string>[] = [];
+
+  // ---------------------------
+  // Messages
+  // ---------------------------
+  derivationInputMessages: { type: 'error' | 'success'; text: string }[] = [];
+  formulaMessages: { type: 'error' | 'success'; text: string }[] = [];
+
+  formulaValidated = false;
+
+  // ---------------------------
+  // Form (IMPORTANT: build in constructor)
+  // ---------------------------
+  form!: FormGroup;
+
+  constructor(private fb: FormBuilder) {
+    this.buildForm();            // ✅ fix fb init issue
+    this.wireEnableDisableLogic();
+  }
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['existingRuleNames']) {
+      this.dependentRuleOptions = [
+        { label: 'Not applicable', value: null },
+        ...(this.existingRuleNames || []).map((r) => ({ label: r, value: r })),
+      ];
+      this.form?.get('rule_name')?.updateValueAndValidity({ emitEvent: false });
+    }
+
+    if (changes['existingFormulaNames']) {
+      this.formulaGroup?.get('formula_name')?.updateValueAndValidity({ emitEvent: false });
+    }
+
+    if (changes['userFieldNameOptions']) {
+      this.userFieldSelectOptions = (this.userFieldNameOptions || []).map((v) => ({ label: v, value: v }));
+    }
+
+    if (changes['existingInputNames']) {
+      this.derivationInputs?.controls.forEach((row) => {
+        row.get('input_name')?.updateValueAndValidity({ emitEvent: false });
+      });
+    }
+  }
+
+  // ---------------------------
+  // Build Form
+  // ---------------------------
+  private buildForm(): void {
+    this.form = this.fb.group({
+      rule_name: [
+        '',
+        [
+          Validators.required,
+          lowercaseUnderscoreOnlyValidator(),
+          uniqueAgainstProvidedListValidator(() => this.existingRuleNames),
+        ],
+      ],
+      dependency_criteria: [{ value: null, disabled: true }, [Validators.required]],
+      dependent_rule_name: [{ value: null, disabled: true }], // can be null
+
+      derivation_inputs: this.fb.array([]),
+
+      formula: this.fb.group({
+        formula_name: [
+          '',
+          [
+            Validators.required,
+            lowercaseUnderscoreOnlyValidator(),
+            uniqueAgainstProvidedListValidator(() => this.existingFormulaNames),
+          ],
+        ],
+        expression: ['', [Validators.required]],
+        priority: [null, [Validators.required, Validators.pattern(/^\d+$/)]],
+      }),
+    });
+  }
+
+  // ---------------------------
+  // Getters
+  // ---------------------------
+  get derivationInputs(): FormArray {
+    return this.form.get('derivation_inputs') as FormArray;
+  }
+
+  get formulaGroup(): FormGroup {
+    return this.form.get('formula') as FormGroup;
+  }
+
+  // ---------------------------
+  // Simple message helpers
+  // ---------------------------
+  private resetMessages(): void {
+    this.derivationInputMessages = [];
+    this.formulaMessages = [];
+  }
+  private showInputError(msg: string): void {
+    this.derivationInputMessages = [{ type: 'error', text: msg }];
+  }
+  private showInputSuccess(msg: string): void {
+    this.derivationInputMessages = [{ type: 'success', text: msg }];
+  }
+  private showFormulaError(msg: string): void {
+    this.formulaMessages = [{ type: 'error', text: msg }];
+  }
+  private showFormulaSuccess(msg: string): void {
+    this.formulaMessages = [{ type: 'success', text: msg }];
+  }
+
+  // ---------------------------
+  // Enable/disable logic for top fields
+  // ---------------------------
+  private wireEnableDisableLogic(): void {
+    const ruleNameCtrl = this.form.get('rule_name') as FormControl;
+    const depCritCtrl = this.form.get('dependency_criteria') as FormControl;
+    const depRuleCtrl = this.form.get('dependent_rule_name') as FormControl;
+
+    ruleNameCtrl.valueChanges.subscribe(() => {
+      this.resetMessages();
+      this.formulaValidated = false;
+
+      if (ruleNameCtrl.value && ruleNameCtrl.valid) {
+        depCritCtrl.enable({ emitEvent: false });
+      } else {
+        depCritCtrl.reset(null, { emitEvent: false });
+        depCritCtrl.disable({ emitEvent: false });
+
+        depRuleCtrl.reset(null, { emitEvent: false });
+        depRuleCtrl.disable({ emitEvent: false });
+
+        this.clearAllInputRows();
+      }
+    });
+
+    depCritCtrl.valueChanges.subscribe(() => {
+      this.resetMessages();
+      this.formulaValidated = false;
+
+      if (depCritCtrl.value) {
+        depRuleCtrl.enable({ emitEvent: false });
+      } else {
+        depRuleCtrl.reset(null, { emitEvent: false });
+        depRuleCtrl.disable({ emitEvent: false });
+        this.clearAllInputRows();
+      }
+    });
+
+    depRuleCtrl.valueChanges.subscribe(() => {
+      this.resetMessages();
+      this.formulaValidated = false;
+
+      if (depCritCtrl.value) {
+        if (this.derivationInputs.length === 0) {
+          this.addInputRow();
+        }
+      } else {
+        this.clearAllInputRows();
+      }
+    });
+  }
+
+  // ---------------------------
+  // Input Rows
+  // ---------------------------
+  private createInputRow(): FormGroup {
+    const row = this.fb.group({
+      label: [''],
+      input_name: [
+        '',
+        [
+          Validators.required,
+          lowercaseUnderscoreOnlyValidator(),
+          uniqueInputNameAcrossRowsValidator(() => this.derivationInputs, () => this.existingInputNames),
+        ],
+      ],
+      input_type: [null, [Validators.required]],
+      input_value: [null],
+
+      sql_validated: [true],
+      sql_error: [null],
+    });
+
+    // ✅ IMPORTANT: valueChanges emits (InputType | null)
+    row.get('input_type')!.valueChanges.subscribe((t: InputType | null) => {
+      row.patchValue(
+        {
+          input_value: null,
+          sql_validated: t === this.INPUT_TYPE_SQL ? false : true,
+          sql_error: null,
+        },
+        { emitEvent: false }
+      );
+
+      this.derivationInputMessages = [];
+      this.formulaValidated = false;
+    });
+
+    row.get('input_value')!.valueChanges.subscribe(() => {
+      const t = row.get('input_type')!.value as InputType | null;
+      if (t === this.INPUT_TYPE_SQL) {
+        row.patchValue({ sql_validated: false, sql_error: null }, { emitEvent: false });
+      }
+      this.derivationInputMessages = [];
+      this.formulaValidated = false;
+    });
+
+    row.get('input_name')!.valueChanges.subscribe(() => {
+      this.formulaValidated = false;
+      this.formulaMessages = [];
+
+      // refresh uniqueness across rows immediately
+      this.derivationInputs.controls.forEach((r) => {
+        r.get('input_name')?.updateValueAndValidity({ emitEvent: false });
+      });
+    });
+
+    return row;
+  }
+
+  addInputRow(): void {
+    this.derivationInputMessages = [];
+
+    if (!this.canAddAnotherInputRow()) {
+      this.showInputError('Please validate the SQL query before adding another input.');
+      return;
+    }
+
+    this.derivationInputs.push(this.createInputRow());
+    this.refreshRowLabels();
+  }
+
+  removeInputRow(index: number): void {
+    this.derivationInputs.removeAt(index);
+    this.refreshRowLabels();
+    this.formulaValidated = false;
+
+    this.derivationInputs.controls.forEach((r) => {
+      r.get('input_name')?.updateValueAndValidity({ emitEvent: false });
+    });
+  }
+
+  private refreshRowLabels(): void {
+    this.derivationInputs.controls.forEach((row, i) => {
+      row.get('label')?.setValue(`Input_${i + 1}`, { emitEvent: false });
+    });
+  }
+
+  private clearAllInputRows(): void {
+    while (this.derivationInputs.length) {
+      this.derivationInputs.removeAt(0);
+    }
+    this.derivationInputMessages = [];
+    this.formulaValidated = false;
+  }
+
+  // ---------------------------
+  // SQL Validation
+  // ---------------------------
+  validateSqlRow(index: number): void {
+    this.derivationInputMessages = [];
+
+    const row = this.derivationInputs.at(index) as FormGroup;
+    const type = row.get('input_type')!.value as InputType | null;
+
+    if (type !== this.INPUT_TYPE_SQL) return;
+
+    const sql = (row.get('input_value')!.value || '').toString();
+    if (!sql.trim()) {
+      row.patchValue({ sql_validated: false, sql_error: 'SQL query cannot be empty.' }, { emitEvent: false });
+      this.showInputError('SQL query cannot be empty.');
+      return;
+    }
+
+    const validateFn =
+      this.validateSqlFn ??
+      ((q: string) => of({ success: true, message: 'SQL validated successfully.' }));
+
+    row.patchValue({ sql_error: null }, { emitEvent: false });
+
+    validateFn(sql)
+      .pipe(
+        map((res) => {
+          if (res?.success) return { ok: true, msg: res.message || 'SQL validated successfully.' };
+          return { ok: false, msg: res?.message || 'SQL validation failed.' };
+        }),
+        catchError(() => of({ ok: false, msg: 'SQL validation failed.' })),
+        finalize(() => {})
+      )
+      .subscribe((result) => {
+        if (result.ok) {
+          row.patchValue({ sql_validated: true, sql_error: null }, { emitEvent: false });
+          this.showInputSuccess(result.msg);
+        } else {
+          row.patchValue({ sql_validated: false, sql_error: result.msg }, { emitEvent: false });
+          this.showInputError(result.msg);
+        }
+      });
+  }
+
+  canAddAnotherInputRow(): boolean {
+    return this.derivationInputs.controls.every((ctrl) => {
+      const row = ctrl as FormGroup;
+      const t = row.get('input_type')!.value as InputType | null;
+      if (t === this.INPUT_TYPE_SQL) return row.get('sql_validated')!.value === true;
+      return true;
+    });
+  }
+
+  sqlRowHasError(index: number): boolean {
+    const row = this.derivationInputs.at(index) as FormGroup;
+    return !!row.get('sql_error')!.value;
+  }
+
+  sqlRowValidated(index: number): boolean {
+    const row = this.derivationInputs.at(index) as FormGroup;
+    return row.get('sql_validated')!.value === true;
+  }
+
+  // ---------------------------
+  // Formula Validation
+  // ---------------------------
+  validateFormula(): void {
+    this.formulaMessages = [];
+
+    if (this.formulaGroup.invalid) {
+      this.showFormulaError('Please fix formula fields before validating.');
+      this.formulaValidated = false;
+      return;
+    }
+
+    const definedInputs = this.getDefinedDerivationInputNames();
+    if (definedInputs.length === 0) {
+      this.showFormulaError('Please define at least one derivation input name.');
+      this.formulaValidated = false;
+      return;
+    }
+
+    const expr = (this.formulaGroup.get('expression')!.value || '').toString();
+
+    const allowedChars = /^[a-z0-9_\s()+\-*/%.]*$/;
+    if (!allowedChars.test(expr)) {
+      this.showFormulaError('Expression contains invalid characters.');
+      this.formulaValidated = false;
+      return;
+    }
+
+    if (!this.isParenthesesBalanced(expr)) {
+      this.showFormulaError('Parentheses are not balanced in the expression.');
+      this.formulaValidated = false;
+      return;
+    }
+
+    // ✅ force tokens to string[]
+    const tokens: string[] = expr.match(/[a-z_][a-z0-9_]*/g) ?? [];
+    const uniqueTokens: string[] = Array.from(new Set<string>(tokens));
+
+    const invalidVars: string[] = uniqueTokens.filter((tok) => !definedInputs.includes(tok));
+    if (invalidVars.length) {
+      this.showFormulaError(`Unknown variable(s): ${invalidVars.join(', ')}`);
+      this.formulaValidated = false;
+      return;
+    }
+
+    this.showFormulaSuccess('Formula validation passed.');
+    this.formulaValidated = true;
+  }
+
+  private getDefinedDerivationInputNames(): string[] {
+    return this.derivationInputs.controls
+      .map((ctrl) => ((ctrl as FormGroup).get('input_name')!.value || '').toString().trim())
+      .filter(Boolean);
+  }
+
+  private isParenthesesBalanced(s: string): boolean {
+    let c = 0;
+    for (const ch of s) {
+      if (ch === '(') c++;
+      if (ch === ')') c--;
+      if (c < 0) return false;
+    }
+    return c === 0;
+  }
+
+  // ---------------------------
+  // Save
+  // ---------------------------
+  save(): void {
+    this.resetMessages();
+
+    if (this.form.get('rule_name')!.invalid) {
+      this.showInputError('Please fix Rule Name.');
+      return;
+    }
+    if (this.form.get('dependency_criteria')!.invalid) {
+      this.showInputError('Please select Rule Dependency Criteria.');
+      return;
+    }
+    if (this.form.get('dependent_rule_name')!.disabled) {
+      this.showInputError('Please select Dependent Rule Name.');
+      return;
+    }
+
+    if (this.derivationInputs.invalid) {
+      this.showInputError('Please fix errors in derivation inputs.');
+      return;
+    }
+
+    if (!this.canAddAnotherInputRow()) {
+      this.showInputError('Please validate the SQL query before saving.');
+      return;
+    }
+
+    if (!this.formulaValidated) {
+      this.showFormulaError('Please validate the formula before saving.');
+      return;
+    }
+
+    this.saveDerivationRule.emit(this.buildPayload());
+  }
+
+  private buildPayload(): any {
+    const ruleName = (this.form.get('rule_name')!.value || '').toString().trim();
+    const dependencyCriteria = this.form.get('dependency_criteria')!.value as DependencyCriteria;
+    const dependentRuleName = this.form.get('dependent_rule_name')!.value as string | null;
+
+    const derivation_inputs = this.derivationInputs.controls.map((ctrl, i) => {
+      const row = ctrl as FormGroup;
+      const type = row.get('input_type')!.value as InputType | null;
+      const val = row.get('input_value')!.value;
+
+      return {
+        input_order: i + 1,
+        input_label: row.get('label')!.value,
+        input_name: (row.get('input_name')!.value || '').toString().trim(),
+        input_type: type,
+        input_value: this.transformValueForPayload(type, val),
+      };
+    });
+
+    const derivation_formula = {
+      formula_name: (this.formulaGroup.get('formula_name')!.value || '').toString().trim(),
+      expression: (this.formulaGroup.get('expression')!.value || '').toString(),
+      priority: Number(this.formulaGroup.get('priority')!.value),
+    };
+
+    return {
+      rule_name: ruleName,
+      dependency_criteria: dependencyCriteria,
+      dependent_rule_name: dependentRuleName,
+      derivation_inputs,
+      derivation_formula,
+    };
+  }
+
+  private transformValueForPayload(type: InputType | null, value: any): any {
+    if (type === this.INPUT_TYPE_LIST) {
+      const raw = (value ?? '').toString().trim();
+      return raw ? `<${raw}>` : null;
+    }
+    return value ?? null;
+  }
+}
+
+/** ---------------- Validators ---------------- */
+
+function lowercaseUnderscoreOnlyValidator(): ValidatorFn {
+  const re = /^[a-z_]+$/;
+  return (control: AbstractControl): ValidationErrors | null => {
+    const v = (control.value ?? '').toString();
+    if (!v) return null;
+    return re.test(v) ? null : { lowercase_underscore_only: true };
+  };
+}
+
+function uniqueAgainstProvidedListValidator(getList: () => string[]): ValidatorFn {
+  return (control: AbstractControl): ValidationErrors | null => {
+    const v = (control.value ?? '').toString().trim();
+    if (!v) return null;
+
+    const list = (getList?.() || []).map((x) => (x ?? '').toString().trim()).filter(Boolean);
+    return list.includes(v) ? { not_unique: true } : null;
+  };
+}
+
+function uniqueInputNameAcrossRowsValidator(
+  getFormArray: () => FormArray,
+  getExisting: () => string[]
+): ValidatorFn {
+  return (control: AbstractControl): ValidationErrors | null => {
+    const v = (control.value ?? '').toString().trim();
+    if (!v) return null;
+
+    const existing = (getExisting?.() || []).map((x) => (x ?? '').toString().trim()).filter(Boolean);
+    if (existing.includes(v)) return { not_unique: true };
+
+    const arr = getFormArray?.();
+    if (!arr) return null;
+
+    const matches = arr.controls
+      .map((ctrl) => (((ctrl as FormGroup).get('input_name')?.value || '').toString().trim()))
+      .filter(Boolean)
+      .filter((name) => name === v).length;
+
+    return matches > 1 ? { not_unique: true } : null;
+  };
+}
