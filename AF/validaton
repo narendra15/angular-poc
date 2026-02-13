@@ -1,0 +1,959 @@
+import {
+  Component,
+  EventEmitter,
+  Input,
+  OnDestroy,
+  OnInit,
+  Output,
+} from '@angular/core';
+import {
+  AbstractControl,
+  FormArray,
+  FormBuilder,
+  FormControl,
+  FormGroup,
+  ValidationErrors,
+  Validators,
+} from '@angular/forms';
+import { Subscription } from 'rxjs';
+
+export interface SelectOption {
+  label: string;
+  value: string;
+}
+
+type DepCriteria = 'On_Rule_Satisfied' | 'On_Rule_Not_Satisfied';
+type OperandType = 'User Field Name' | 'SQL' | 'Literal' | 'List';
+
+@Component({
+  selector: 'app-validation-rules',
+  templateUrl: './validation-rules.component.html',
+  styleUrls: ['./validation-rules.component.scss'],
+})
+export class ValidationRulesComponent implements OnInit, OnDestroy {
+  // ---- Inputs from parent ----
+  /** Existing rule names to validate uniqueness + to show as options in dependent rule dropdown */
+  @Input() existingRuleNames: string[] = [];
+
+  /** User field names list for operand type = User Field Name */
+  @Input() userFieldNameOptions: SelectOption[] = [];
+
+  /** API service (use your actual service type) */
+  @Input() _apiService: any;
+
+  // ---- Output ----
+  @Output() saveRule = new EventEmitter<any>();
+  @Output() cancel = new EventEmitter<void>();
+
+  // ---- Top dropdown options ----
+  dependencyCriteriaOptions: SelectOption[] = [
+    { label: 'On_Rule_Satisfied', value: 'On_Rule_Satisfied' },
+    { label: 'On_Rule_Not_Satisfied', value: 'On_Rule_Not_Satisfied' },
+  ];
+
+  dependentRuleOptions: SelectOption[] = []; // derived from existingRuleNames
+
+  // ---- Table dropdown options ----
+  operandTypeOptions: SelectOption[] = [
+    { label: 'User Field Name', value: 'User Field Name' },
+    { label: 'SQL', value: 'SQL' },
+    { label: 'Literal', value: 'Literal' },
+    { label: 'List', value: 'List' },
+  ];
+
+  operatorOptions: SelectOption[] = [
+    { label: '=', value: '=' },
+    { label: '<>', value: '<>' },
+    { label: '!=', value: '!=' },
+    { label: '>', value: '>' },
+    { label: '<', value: '<' },
+    { label: '>=', value: '>=' },
+    { label: '<=', value: '<=' },
+    { label: 'IN', value: 'IN' },
+    { label: 'Between', value: 'Between' },
+    { label: 'IS', value: 'IS' },
+    { label: 'NULL', value: 'NULL' },
+    { label: 'IS NOT NULL', value: 'IS NOT NULL' },
+  ];
+
+  // ---- Bottom dropdown options ----
+  onRuleOutcomeOptions: SelectOption[] = [
+    { label: 'Execute Dependent Rule', value: 'Execute Dependent Rule' },
+    { label: 'Exit with success', value: 'Exit with success' },
+    { label: 'Exit with Failure', value: 'Exit with Failure' },
+  ];
+
+  // ---- UI state ----
+  sqlGlobalErrorMsg = ''; // message on top of table
+  private subs: Subscription[] = [];
+
+  // ---- form ----
+  form!: FormGroup<{
+    ruleName: FormControl<string | null>;
+    dependencyCriteria: FormControl<DepCriteria | null>;
+    dependentRuleName: FormControl<string | null>; // can be null
+    conditionGroups: FormArray<FormGroup>;
+    onRuleSatisfied: FormControl<string | null>;
+    onRuleSatisfiedFailureMsg: FormControl<string | null>;
+    onRuleNotSatisfied: FormControl<string | null>;
+    onRuleNotSatisfiedFailureMsg: FormControl<string | null>;
+  }>;
+
+  constructor(private fb: FormBuilder) {}
+
+  ngOnInit(): void {
+    this.dependentRuleOptions = this.existingRuleNames.map((x) => ({
+      label: x,
+      value: x,
+    }));
+
+    this.buildForm();
+    this.wireTopFields();
+    this.wireBottomFields();
+
+    // Start with one empty group, but show it only after dependent rule dropdown selection (as per requirement).
+    // We create it lazily when 3rd dropdown selected.
+  }
+
+  private buildForm(): void {
+    this.form = this.fb.group({
+      ruleName: this.fb.control<string | null>(null, {
+        validators: [
+          Validators.required,
+          Validators.pattern(/^[a-z_]+$/), // only lowercase a-z and _
+          this.uniqueRuleNameValidator(() => this.existingRuleNames),
+        ],
+      }),
+
+      dependencyCriteria: this.fb.control<DepCriteria | null>(
+        { value: null, disabled: true },
+        { validators: [Validators.required] }
+      ),
+
+      dependentRuleName: this.fb.control<string | null>(
+        { value: null, disabled: true },
+        [] // nullable allowed
+      ),
+
+      conditionGroups: this.fb.array<FormGroup>([]),
+
+      onRuleSatisfied: this.fb.control<string | null>(null),
+      onRuleSatisfiedFailureMsg: this.fb.control<string | null>({ value: null, disabled: true }),
+
+      onRuleNotSatisfied: this.fb.control<string | null>(null),
+      onRuleNotSatisfiedFailureMsg: this.fb.control<string | null>({ value: null, disabled: true }),
+    });
+  }
+
+  // ------------------------------
+  // Enable logic for first 3 fields
+  // ------------------------------
+  private wireTopFields(): void {
+    // 2nd field enabled only if rule name valid and not empty
+    const s1 = this.form.controls.ruleName.valueChanges.subscribe(() => {
+      const ctrl = this.form.controls.ruleName;
+      this.sqlGlobalErrorMsg = '';
+      this.resetTopDownstream('ruleName');
+
+      if (ctrl.valid) {
+        this.form.controls.dependencyCriteria.enable({ emitEvent: false });
+      } else {
+        this.form.controls.dependencyCriteria.disable({ emitEvent: false });
+      }
+    });
+    this.subs.push(s1);
+
+    // 3rd field enabled only if dependency selected
+    const s2 = this.form.controls.dependencyCriteria.valueChanges.subscribe((v) => {
+      this.sqlGlobalErrorMsg = '';
+      this.resetTopDownstream('dependencyCriteria');
+
+      if (this.isValidValue(v)) {
+        this.form.controls.dependentRuleName.enable({ emitEvent: false });
+      } else {
+        this.form.controls.dependentRuleName.disable({ emitEvent: false });
+      }
+    });
+    this.subs.push(s2);
+
+    // On selecting 3rd dropdown -> show condition group 1 (create first group if none)
+    const s3 = this.form.controls.dependentRuleName.valueChanges.subscribe(() => {
+      this.sqlGlobalErrorMsg = '';
+      // condition groups should appear when 3rd dropdown is selected
+      // 3rd dropdown can be null (Not applicable). Still, selection action means user is done here.
+      // We'll treat "touched selection" as: dependency is selected & control enabled.
+      if (!this.form.controls.dependentRuleName.disabled) {
+        if (this.conditionGroups.length === 0) {
+          this.addConditionGroup();
+        }
+      }
+    });
+    this.subs.push(s3);
+  }
+
+  private resetTopDownstream(from: 'ruleName' | 'dependencyCriteria'): void {
+    if (from === 'ruleName') {
+      this.form.controls.dependencyCriteria.setValue(null, { emitEvent: false });
+      this.form.controls.dependentRuleName.setValue(null, { emitEvent: false });
+      this.form.controls.dependentRuleName.disable({ emitEvent: false });
+      this.clearAllGroups();
+    }
+
+    if (from === 'dependencyCriteria') {
+      this.form.controls.dependentRuleName.setValue(null, { emitEvent: false });
+      this.clearAllGroups();
+    }
+  }
+
+  // ------------------------------
+  // Condition Groups / Rows
+  // ------------------------------
+  get conditionGroups(): FormArray<FormGroup> {
+    return this.form.controls.conditionGroups as FormArray<FormGroup>;
+  }
+
+  groupRows(groupIndex: number): FormArray<FormGroup> {
+    return this.conditionGroups.at(groupIndex).get('rows') as FormArray<FormGroup>;
+  }
+
+  /** Gate: cannot add row or group if any SQL exists and not validated */
+  canAddMore(): boolean {
+    return !this.hasAnySqlNotValidated();
+  }
+
+  addConditionGroup(): void {
+    if (!this.canAddMore()) return;
+
+    const group = this.fb.group({
+      groupName: this.fb.control<string>(`Condition_Group_${this.conditionGroups.length + 1}`),
+      rows: this.fb.array<FormGroup>([]),
+    });
+
+    this.conditionGroups.push(group);
+    // add first row
+    this.addConditionRow(this.conditionGroups.length - 1);
+  }
+
+  addConditionRow(groupIndex: number): void {
+    if (!this.canAddMore()) return;
+
+    const rows = this.groupRows(groupIndex);
+    const rowNo = rows.length + 1;
+
+    const row = this.fb.group({
+      conditionLabel: this.fb.control<string>(`Condition_${rowNo}`),
+
+      operand1Type: this.fb.control<OperandType | null>(null, { validators: [Validators.required] }),
+      operand1Value: this.fb.control<string | null>({ value: null, disabled: true }, []),
+      operand1SqlValidated: this.fb.control<boolean>(false),
+      operand1SqlError: this.fb.control<boolean>(false),
+
+      operator: this.fb.control<string | null>(null, { validators: [Validators.required] }),
+
+      operand2Type: this.fb.control<OperandType | null>(null, { validators: [Validators.required] }),
+      operand2Value: this.fb.control<string | null>({ value: null, disabled: true }, []),
+      operand2SqlValidated: this.fb.control<boolean>(false),
+      operand2SqlError: this.fb.control<boolean>(false),
+    });
+
+    rows.push(row);
+
+    // Wire type changes for operand 1 and operand 2 (simple subscriptions)
+    this.wireOperandTypeChange(groupIndex, rows.length - 1, 'operand1Type', 'operand1Value', 'operand1SqlValidated', 'operand1SqlError');
+    this.wireOperandTypeChange(groupIndex, rows.length - 1, 'operand2Type', 'operand2Value', 'operand2SqlValidated', 'operand2SqlError');
+  }
+
+  removeConditionRow(groupIndex: number, rowIndex: number): void {
+    const rows = this.groupRows(groupIndex);
+    rows.removeAt(rowIndex);
+
+    // Re-label condition names
+    rows.controls.forEach((r, i) => {
+      r.get('conditionLabel')?.setValue(`Condition_${i + 1}`, { emitEvent: false });
+    });
+  }
+
+  removeConditionGroup(groupIndex: number): void {
+    this.conditionGroups.removeAt(groupIndex);
+
+    // Re-label group names
+    this.conditionGroups.controls.forEach((g, i) => {
+      g.get('groupName')?.setValue(`Condition_Group_${i + 1}`, { emitEvent: false });
+      const rows = g.get('rows') as FormArray<FormGroup>;
+      rows.controls.forEach((r, idx) => {
+        r.get('conditionLabel')?.setValue(`Condition_${idx + 1}`, { emitEvent: false });
+      });
+    });
+  }
+
+  private clearAllGroups(): void {
+    while (this.conditionGroups.length > 0) {
+      this.conditionGroups.removeAt(0);
+    }
+  }
+
+  // Enable operand value based on operand type
+  private wireOperandTypeChange(
+    groupIndex: number,
+    rowIndex: number,
+    typeKey: string,
+    valueKey: string,
+    sqlValidatedKey: string,
+    sqlErrorKey: string
+  ): void {
+    const row = this.groupRows(groupIndex).at(rowIndex);
+
+    const s = row.get(typeKey)!.valueChanges.subscribe((typeVal: OperandType | null) => {
+      this.sqlGlobalErrorMsg = '';
+
+      // Reset value + sql flags
+      row.get(valueKey)!.setValue(null, { emitEvent: false });
+      row.get(sqlValidatedKey)!.setValue(false, { emitEvent: false });
+      row.get(sqlErrorKey)!.setValue(false, { emitEvent: false });
+
+      // Enable value input for all types except null
+      if (this.isValidValue(typeVal)) {
+        row.get(valueKey)!.enable({ emitEvent: false });
+      } else {
+        row.get(valueKey)!.disable({ emitEvent: false });
+      }
+    });
+
+    this.subs.push(s);
+  }
+
+  // ------------------------------
+  // SQL Validation
+  // ------------------------------
+  validateSql(groupIndex: number, rowIndex: number, which: 'op1' | 'op2'): void {
+    const row = this.groupRows(groupIndex).at(rowIndex);
+
+    const typeKey = which === 'op1' ? 'operand1Type' : 'operand2Type';
+    const valueKey = which === 'op1' ? 'operand1Value' : 'operand2Value';
+    const validatedKey = which === 'op1' ? 'operand1SqlValidated' : 'operand2SqlValidated';
+    const errorKey = which === 'op1' ? 'operand1SqlError' : 'operand2SqlError';
+
+    const typeVal = row.get(typeKey)!.value as OperandType | null;
+    const sql = String(row.get(valueKey)!.value ?? '').trim();
+
+    if (typeVal !== 'SQL') return;
+
+    if (!sql) {
+      this.sqlGlobalErrorMsg = 'SQL query cannot be empty.';
+      row.get(errorKey)!.setValue(true, { emitEvent: false });
+      row.get(validatedKey)!.setValue(false, { emitEvent: false });
+      return;
+    }
+
+    this.sqlGlobalErrorMsg = '';
+
+    const payload = { sql_query: sql }; // adjust key if backend expects different
+
+    // API call in your style
+    this._apiService.postData('validate-sql/', payload).subscribe({
+      next: (resp: any) => {
+        // Assuming resp.status true means success
+        const ok = !!resp?.status;
+
+        if (ok) {
+          row.get(validatedKey)!.setValue(true, { emitEvent: false });
+          row.get(errorKey)!.setValue(false, { emitEvent: false });
+          this.sqlGlobalErrorMsg = '';
+        } else {
+          row.get(validatedKey)!.setValue(false, { emitEvent: false });
+          row.get(errorKey)!.setValue(true, { emitEvent: false });
+          this.sqlGlobalErrorMsg = resp?.message || 'SQL validation failed.';
+        }
+      },
+      error: (err: any) => {
+        console.error('validate-sql error', err);
+        row.get(validatedKey)!.setValue(false, { emitEvent: false });
+        row.get(errorKey)!.setValue(true, { emitEvent: false });
+        this.sqlGlobalErrorMsg = 'SQL validation failed.';
+      },
+    });
+  }
+
+  private hasAnySqlNotValidated(): boolean {
+    // If any operand type is SQL but validated flag false -> block add row/group
+    for (let g = 0; g < this.conditionGroups.length; g++) {
+      const rows = this.groupRows(g);
+      for (let r = 0; r < rows.length; r++) {
+        const row = rows.at(r);
+
+        const t1 = row.get('operand1Type')?.value;
+        const v1 = row.get('operand1SqlValidated')?.value === true;
+        if (t1 === 'SQL' && !v1) return true;
+
+        const t2 = row.get('operand2Type')?.value;
+        const v2 = row.get('operand2SqlValidated')?.value === true;
+        if (t2 === 'SQL' && !v2) return true;
+      }
+    }
+    return false;
+  }
+
+  // ------------------------------
+  // Bottom fields logic
+  // ------------------------------
+  private wireBottomFields(): void {
+    const s1 = this.form.controls.onRuleSatisfied.valueChanges.subscribe((v) => {
+      this.toggleFailureMsgControl('onRuleSatisfied', v);
+    });
+    const s2 = this.form.controls.onRuleNotSatisfied.valueChanges.subscribe((v) => {
+      this.toggleFailureMsgControl('onRuleNotSatisfied', v);
+    });
+    this.subs.push(s1, s2);
+  }
+
+  private toggleFailureMsgControl(which: 'onRuleSatisfied' | 'onRuleNotSatisfied', value: any): void {
+    if (which === 'onRuleSatisfied') {
+      if (value === 'Exit with Failure') {
+        this.form.controls.onRuleSatisfiedFailureMsg.enable({ emitEvent: false });
+        this.form.controls.onRuleSatisfiedFailureMsg.setValidators([Validators.required]);
+        this.form.controls.onRuleSatisfiedFailureMsg.updateValueAndValidity({ emitEvent: false });
+      } else {
+        this.form.controls.onRuleSatisfiedFailureMsg.setValue(null, { emitEvent: false });
+        this.form.controls.onRuleSatisfiedFailureMsg.clearValidators();
+        this.form.controls.onRuleSatisfiedFailureMsg.disable({ emitEvent: false });
+        this.form.controls.onRuleSatisfiedFailureMsg.updateValueAndValidity({ emitEvent: false });
+      }
+    }
+
+    if (which === 'onRuleNotSatisfied') {
+      if (value === 'Exit with Failure') {
+        this.form.controls.onRuleNotSatisfiedFailureMsg.enable({ emitEvent: false });
+        this.form.controls.onRuleNotSatisfiedFailureMsg.setValidators([Validators.required]);
+        this.form.controls.onRuleNotSatisfiedFailureMsg.updateValueAndValidity({ emitEvent: false });
+      } else {
+        this.form.controls.onRuleNotSatisfiedFailureMsg.setValue(null, { emitEvent: false });
+        this.form.controls.onRuleNotSatisfiedFailureMsg.clearValidators();
+        this.form.controls.onRuleNotSatisfiedFailureMsg.disable({ emitEvent: false });
+        this.form.controls.onRuleNotSatisfiedFailureMsg.updateValueAndValidity({ emitEvent: false });
+      }
+    }
+  }
+
+  // ------------------------------
+  // Save (emit payload)
+  // ------------------------------
+  onSave(): void {
+    this.sqlGlobalErrorMsg = '';
+
+    // block if SQL pending validation
+    if (this.hasAnySqlNotValidated()) {
+      this.sqlGlobalErrorMsg = 'Please validate all SQL queries before saving.';
+      return;
+    }
+
+    if (this.form.invalid) {
+      this.form.markAllAsTouched();
+      return;
+    }
+
+    const payload = this.buildPayload();
+    this.saveRule.emit(payload);
+  }
+
+  private buildPayload(): any {
+    const f = this.form.getRawValue();
+
+    return {
+      rule_name: f.ruleName,
+      rule_dependency_criteria: f.dependencyCriteria,
+      dependent_rule_name: f.dependentRuleName ?? null,
+
+      condition_groups: (f.conditionGroups ?? []).map((g: any) => ({
+        group_name: g.groupName,
+        conditions: (g.rows ?? []).map((r: any) => ({
+          condition: r.conditionLabel,
+
+          operand1: this.buildOperandPayload(r.operand1Type, r.operand1Value),
+          operator: r.operator,
+          operand2: this.buildOperandPayload(r.operand2Type, r.operand2Value),
+        })),
+      })),
+
+      on_rule_satisfied: {
+        action: f.onRuleSatisfied ?? null,
+        failure_message: f.onRuleSatisfied === 'Exit with Failure' ? f.onRuleSatisfiedFailureMsg : null,
+      },
+
+      on_rule_not_satisfied: {
+        action: f.onRuleNotSatisfied ?? null,
+        failure_message: f.onRuleNotSatisfied === 'Exit with Failure' ? f.onRuleNotSatisfiedFailureMsg : null,
+      },
+    };
+  }
+
+  private buildOperandPayload(type: OperandType | null, rawValue: string | null): any {
+    if (!type) return { type: null, value: null };
+
+    const v = (rawValue ?? '').trim();
+
+    if (type === 'List') {
+      // Store raw, parent/back-end can parse; also provide formatted version with <...>
+      const formatted = this.formatListForPayload(v);
+      return { type, value: v, formatted_value: formatted };
+    }
+
+    return { type, value: v };
+  }
+
+  /**
+   * Requirement: For List -> "Auto apply <> open and close to the values exporting to payload"
+   * Example:
+   *  1,2,3  => <1,2,3>
+   *  "A","B" => <"A","B">
+   */
+  private formatListForPayload(v: string): string {
+    const t = v.trim();
+    if (!t) return '';
+    const alreadyWrapped = t.startsWith('<') && t.endsWith('>');
+    return alreadyWrapped ? t : `<${t}>`;
+  }
+
+  // ------------------------------
+  // Validators / helpers
+  // ------------------------------
+  private uniqueRuleNameValidator(getList: () => string[]) {
+    return (control: AbstractControl): ValidationErrors | null => {
+      const val = String(control.value ?? '').trim();
+      if (!val) return null;
+
+      const list = (getList() ?? []).map((x) => String(x).trim().toLowerCase());
+      if (list.includes(val.toLowerCase())) {
+        return { notUnique: true };
+      }
+      return null;
+    };
+  }
+
+  isValidValue(v: any): boolean {
+    return v !== null && v !== undefined && String(v).trim().length > 0;
+  }
+
+  // Helper for template: show condition section only after 3rd dropdown enabled and selected/touched
+  showConditions(): boolean {
+    return !this.form.controls.dependentRuleName.disabled && this.conditionGroups.length > 0;
+  }
+
+  // Used by template to decide input type for operand value rendering
+  getOperandType(groupIndex: number, rowIndex: number, which: 'op1' | 'op2'): OperandType | null {
+    const row = this.groupRows(groupIndex).at(rowIndex);
+    const key = which === 'op1' ? 'operand1Type' : 'operand2Type';
+    return (row.get(key)?.value ?? null) as OperandType | null;
+  }
+
+  // Used by template: red SQL textarea
+  isSqlError(groupIndex: number, rowIndex: number, which: 'op1' | 'op2'): boolean {
+    const row = this.groupRows(groupIndex).at(rowIndex);
+    const key = which === 'op1' ? 'operand1SqlError' : 'operand2SqlError';
+    return row.get(key)?.value === true;
+  }
+
+  isSqlValidated(groupIndex: number, rowIndex: number, which: 'op1' | 'op2'): boolean {
+    const row = this.groupRows(groupIndex).at(rowIndex);
+    const key = which === 'op1' ? 'operand1SqlValidated' : 'operand2SqlValidated';
+    return row.get(key)?.value === true;
+  }
+
+  ngOnDestroy(): void {
+    this.subs.forEach((s) => s.unsubscribe());
+    this.subs = [];
+  }
+}
+
+
+
+
+//////////// HTML ///////////////
+
+
+<form class="vr-form" [formGroup]="form">
+
+  <!-- Top section -->
+  <div class="top-fields">
+    <!-- 1) Rule Name -->
+    <div class="field">
+      <label>Rule Name</label>
+      <input
+        type="text"
+        formControlName="ruleName"
+        placeholder="only a-z and _"
+      />
+
+      <div class="err" *ngIf="form.controls.ruleName.touched && form.controls.ruleName.errors">
+        <div *ngIf="form.controls.ruleName.errors['required']">Rule name is required.</div>
+        <div *ngIf="form.controls.ruleName.errors['pattern']">Only lowercase a-z and _ allowed.</div>
+        <div *ngIf="form.controls.ruleName.errors['notUnique']">Rule name must be unique.</div>
+      </div>
+    </div>
+
+    <!-- 2) Rule Dependency criteria -->
+    <div class="field">
+      <label>Rule Dependency Criteria</label>
+      <bmo-select-box
+        formControlName="dependencyCriteria"
+        [options]="dependencyCriteriaOptions"
+        [disabled]="form.controls.dependencyCriteria.disabled"
+        placeholder="Select criteria">
+      </bmo-select-box>
+    </div>
+
+    <!-- 3) Dependent Rule Name -->
+    <div class="field">
+      <label>Dependent Rule Name (optional)</label>
+      <bmo-select-box
+        formControlName="dependentRuleName"
+        [options]="dependentRuleOptions"
+        [disabled]="form.controls.dependentRuleName.disabled"
+        placeholder="Not applicable">
+      </bmo-select-box>
+    </div>
+  </div>
+
+  <!-- Conditions -->
+  <div class="conditions" *ngIf="showConditions()">
+
+    <div class="sql-error-banner" *ngIf="sqlGlobalErrorMsg">
+      {{ sqlGlobalErrorMsg }}
+    </div>
+
+    <div class="groups">
+
+      <div class="group" *ngFor="let g of conditionGroups.controls; let gi = index">
+        <div class="group-header">
+          <div class="title">{{ g.get('groupName')?.value }}</div>
+
+          <div class="group-actions">
+            <button type="button" (click)="addConditionRow(gi)" [disabled]="!canAddMore()">
+              + Add Row
+            </button>
+
+            <button type="button" (click)="addConditionGroup()" [disabled]="!canAddMore()">
+              + Add Group
+            </button>
+
+            <button type="button" (click)="removeConditionGroup(gi)" [disabled]="conditionGroups.length === 1">
+              Remove Group
+            </button>
+          </div>
+        </div>
+
+        <!-- Simple table layout (no headers) -->
+        <div class="rows">
+          <div class="row"
+               *ngFor="let r of groupRows(gi).controls; let ri = index"
+               [formGroup]="r">
+
+            <!-- Col 1: Condition_# -->
+            <div class="col col-1">
+              <span class="pill">{{ r.get('conditionLabel')?.value }}</span>
+            </div>
+
+            <!-- Col 2: Operand 1 type -->
+            <div class="col col-2">
+              <bmo-select-box
+                formControlName="operand1Type"
+                [options]="operandTypeOptions"
+                placeholder="Operand1 Type">
+              </bmo-select-box>
+            </div>
+
+            <!-- Col 3: Operand 1 value (dynamic) -->
+            <div class="col col-3">
+              <ng-container [ngSwitch]="getOperandType(gi, ri, 'op1')">
+
+                <!-- User Field Name -->
+                <bmo-select-box
+                  *ngSwitchCase="'User Field Name'"
+                  formControlName="operand1Value"
+                  [options]="userFieldNameOptions"
+                  placeholder="Select field">
+                </bmo-select-box>
+
+                <!-- List -->
+                <input
+                  *ngSwitchCase="'List'"
+                  type="text"
+                  formControlName="operand1Value"
+                  placeholder='Example: 1,2,3 or "A","B"'
+                />
+
+                <!-- Literal -->
+                <input
+                  *ngSwitchCase="'Literal'"
+                  type="text"
+                  formControlName="operand1Value"
+                  placeholder='Example: 10 or "ABC"'
+                />
+
+                <!-- SQL -->
+                <div *ngSwitchCase="'SQL'" class="sql-box">
+                  <textarea
+                    formControlName="operand1Value"
+                    placeholder="Enter SQL query"
+                    [class.sql-error]="isSqlError(gi, ri, 'op1')"></textarea>
+
+                  <button type="button" (click)="validateSql(gi, ri, 'op1')">
+                    Validate SQL
+                  </button>
+
+                  <div class="ok" *ngIf="isSqlValidated(gi, ri, 'op1')">Validated</div>
+                </div>
+
+                <!-- Default -->
+                <input
+                  *ngSwitchDefault
+                  type="text"
+                  formControlName="operand1Value"
+                  placeholder="Value"
+                />
+              </ng-container>
+            </div>
+
+            <!-- Col 4: Operator -->
+            <div class="col col-4">
+              <bmo-select-box
+                formControlName="operator"
+                [options]="operatorOptions"
+                placeholder="Operator">
+              </bmo-select-box>
+            </div>
+
+            <!-- Col 5: Operand 2 type -->
+            <div class="col col-5">
+              <bmo-select-box
+                formControlName="operand2Type"
+                [options]="operandTypeOptions"
+                placeholder="Operand2 Type">
+              </bmo-select-box>
+            </div>
+
+            <!-- Col 6: Operand 2 value -->
+            <div class="col col-6">
+              <ng-container [ngSwitch]="getOperandType(gi, ri, 'op2')">
+
+                <bmo-select-box
+                  *ngSwitchCase="'User Field Name'"
+                  formControlName="operand2Value"
+                  [options]="userFieldNameOptions"
+                  placeholder="Select field">
+                </bmo-select-box>
+
+                <input
+                  *ngSwitchCase="'List'"
+                  type="text"
+                  formControlName="operand2Value"
+                  placeholder='Example: 1,2,3 or "A","B"'
+                />
+
+                <input
+                  *ngSwitchCase="'Literal'"
+                  type="text"
+                  formControlName="operand2Value"
+                  placeholder='Example: 10 or "ABC"'
+                />
+
+                <div *ngSwitchCase="'SQL'" class="sql-box">
+                  <textarea
+                    formControlName="operand2Value"
+                    placeholder="Enter SQL query"
+                    [class.sql-error]="isSqlError(gi, ri, 'op2')"></textarea>
+
+                  <button type="button" (click)="validateSql(gi, ri, 'op2')">
+                    Validate SQL
+                  </button>
+
+                  <div class="ok" *ngIf="isSqlValidated(gi, ri, 'op2')">Validated</div>
+                </div>
+
+                <input
+                  *ngSwitchDefault
+                  type="text"
+                  formControlName="operand2Value"
+                  placeholder="Value"
+                />
+              </ng-container>
+            </div>
+
+            <!-- Row actions -->
+            <div class="col col-actions">
+              <button type="button" (click)="removeConditionRow(gi, ri)" [disabled]="groupRows(gi).length === 1">
+                Remove
+              </button>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Bottom actions -->
+  <div class="bottom-fields">
+
+    <div class="field">
+      <label>On Rule Satisfied</label>
+      <bmo-select-box
+        formControlName="onRuleSatisfied"
+        [options]="onRuleOutcomeOptions"
+        placeholder="Optional">
+      </bmo-select-box>
+
+      <textarea
+        *ngIf="form.controls.onRuleSatisfied.value === 'Exit with Failure'"
+        formControlName="onRuleSatisfiedFailureMsg"
+        placeholder="Failure message (mandatory)"></textarea>
+
+      <div class="err" *ngIf="form.controls.onRuleSatisfiedFailureMsg.enabled
+                           && form.controls.onRuleSatisfiedFailureMsg.touched
+                           && form.controls.onRuleSatisfiedFailureMsg.errors?.['required']">
+        Failure message is required.
+      </div>
+    </div>
+
+    <div class="field">
+      <label>On Rule Not Satisfied</label>
+      <bmo-select-box
+        formControlName="onRuleNotSatisfied"
+        [options]="onRuleOutcomeOptions"
+        placeholder="Optional">
+      </bmo-select-box>
+
+      <textarea
+        *ngIf="form.controls.onRuleNotSatisfied.value === 'Exit with Failure'"
+        formControlName="onRuleNotSatisfiedFailureMsg"
+        placeholder="Failure message (mandatory)"></textarea>
+
+      <div class="err" *ngIf="form.controls.onRuleNotSatisfiedFailureMsg.enabled
+                           && form.controls.onRuleNotSatisfiedFailureMsg.touched
+                           && form.controls.onRuleNotSatisfiedFailureMsg.errors?.['required']">
+        Failure message is required.
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Save -->
+  <div class="footer">
+    <button type="button" (click)="onSave()" [disabled]="!canAddMore() && hasAnySqlNotValidated()">
+      Save
+    </button>
+
+    <button type="button" (click)="cancel.emit()">Cancel</button>
+  </div>
+</form>
+
+
+
+/////////// CSS//////////
+
+
+
+.vr-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.top-fields, .bottom-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 16px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.err {
+  font-size: 12px;
+  color: #b00020;
+}
+
+.conditions {
+  border: 1px solid #ddd;
+  padding: 12px;
+  border-radius: 8px;
+}
+
+.sql-error-banner {
+  margin-bottom: 12px;
+  padding: 10px;
+  border-radius: 6px;
+  background: #ffe9e9;
+  color: #b00020;
+}
+
+.group {
+  border: 1px solid #eee;
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 12px;
+}
+
+.group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+
+  .title {
+    font-weight: 600;
+  }
+
+  .group-actions {
+    display: flex;
+    gap: 8px;
+  }
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 140px 170px 1fr 140px 170px 1fr 90px;
+  gap: 10px;
+  align-items: start;
+}
+
+.pill {
+  display: inline-block;
+  background: #f4f4f4;
+  padding: 6px 10px;
+  border-radius: 999px;
+}
+
+.sql-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+
+  textarea {
+    min-height: 70px;
+  }
+
+  .ok {
+    font-size: 12px;
+    color: #1b5e20;
+  }
+}
+
+textarea.sql-error {
+  border: 1px solid #b00020;
+  color: #b00020;
+}
+
+.footer {
+  display: flex;
+  gap: 10px;
+}
