@@ -1,0 +1,744 @@
+import { Component, EventEmitter, OnInit, Output } from '@angular/core';
+import {
+  AbstractControl,
+  FormArray,
+  FormBuilder,
+  FormControl,
+  FormGroup,
+  ValidatorFn,
+  Validators,
+} from '@angular/forms';
+
+type AnyObj = Record<string, any>;
+type TableColumnMap = Record<string, Record<string, AnyObj>>;
+
+@Component({
+  selector: 'app-field-definition-grid',
+  templateUrl: './field-definition-grid.html',
+  styleUrls: ['./field-definition-grid.scss'],
+})
+export class FieldDefinitionGridComponent implements OnInit {
+  @Output() payloadChange = new EventEmitter<TableColumnMap>();
+
+  /** Future toggle:
+   *  false => all rows must be valid (save all rows)
+   *  true  => allow saving only rows that user started filling
+   */
+  partialSaveEnabled = false;
+
+  /** Existing rows editable toggle */
+  enableExistingRows = false;
+
+  /** Used to show validation errors on Save click */
+  submitAttempted = false;
+
+  /* ---------- SAMPLE API DATA (NEW JOINED SHAPE) ---------- */
+  apiMetaData: TableColumnMap = {
+    fcy_clt: {
+      idp_warehouse_id: {
+        ordinal_position: 1,
+        is_nullable: 'YES',
+        data_type: 'bigint',
+        character_maximum_length: null,
+        numeric_precision: 64,
+        numeric_scale: 0,
+        column_name: 'idp_warehouse_id',
+        table_name: 'fcy_clt',
+        is_key_mapped: false,
+      },
+      prim_clt_ind: {
+        ordinal_position: 18,
+        is_nullable: 'YES',
+        data_type: 'character varying',
+        character_maximum_length: 65535,
+        numeric_precision: null,
+        numeric_scale: null,
+        column_name: 'prim_clt_ind',
+        table_name: 'fcy_clt',
+        is_key_mapped: false,
+      },
+      // Example of "combined columns key" from screenshot – still works
+      'actv_ind, etl_audit_id, bus_cmrc1_rtl_splt_cd': {
+        ordinal_position: 17,
+        is_nullable: 'YES',
+        data_type: 'character varying',
+        character_maximum_length: 65535,
+        numeric_precision: null,
+        numeric_scale: null,
+        column_name: 'actv_ind, etl_audit_id, bus_cmrc1_rtl_splt_cd',
+        table_name: 'fcy_clt',
+        is_key_mapped: true,
+      },
+    },
+    l1_ref_sap_s4_lu_tp_fs_ac_grp: {
+      idp_warehouse_id: {
+        ordinal_position: 1,
+        is_nullable: 'NO',
+        data_type: 'bigint',
+        character_maximum_length: null,
+        numeric_precision: 64,
+        numeric_scale: 0,
+        column_name: 'idp_warehouse_id',
+        table_name: 'l1_ref_sap_s4_lu_tp_fs_ac_grp',
+        is_key_mapped: false,
+      },
+      idp_audit_id: {
+        ordinal_position: 2,
+        is_nullable: 'NO',
+        data_type: 'bigint',
+        character_maximum_length: null,
+        numeric_precision: 64,
+        numeric_scale: 0,
+        column_name: 'idp_audit_id',
+        table_name: 'l1_ref_sap_s4_lu_tp_fs_ac_grp',
+        is_key_mapped: false,
+      },
+    },
+  };
+
+  /* ---------- EXISTING DATA (SAME SHAPE, WITH USER FIELDS) ---------- */
+  existingData: TableColumnMap = {
+    fcy_clt: {
+      prim_clt_ind: {
+        system_field_name: 'RPT_DATA_DATE',
+        form_field: 'Date picker',
+        field_category: 'User',
+        field_requirement: 'Mandatory',
+        dependent_field: null,
+        field_default_value: null,
+        field_editable: 'Yes',
+        field_validation_rule_exists: 'Yes',
+        field_derivation_rule_exists: 'Yes',
+        field_allowed_values: 'NOT_APPLICABLE',
+        field_standard_values: null,
+        field_position_in_template: 1,
+      },
+    },
+  };
+
+  // ---------- Dropdown Options ----------
+  formFieldOptions = ['Free text', 'Radio button', 'Drop down', 'Date picker'];
+  fieldCategoryOptions = ['User', 'Derived'];
+  fieldRequirementOptions = ['Mandatory', 'Conditionally mandatory', 'Optional'];
+  yesNoOptions = ['Yes', 'No'];
+  allowedValuesOptions = ['STANDARD_VALUES', 'NOT_APPLICABLE'];
+
+  // ---------- Table columns ----------
+  displayedColumns: string[] = [
+    'tableName',
+    'columnName',
+    'systemFieldName',
+    'formField',
+    'fieldCategory',
+    'fieldRequirement',
+    'dependentField',
+    'dataType',
+    'maxLength',
+    'numericPrecision',
+    'numericScale',
+    'defaultValue',
+    'editableByUser',
+    'validationRuleExists',
+    'derivationRuleExists',
+    'allowedValues',
+    'standardValues',
+    'positionInTemplate',
+  ];
+
+  columnLabels: Record<string, string> = {
+    tableName: 'Table Name',
+    columnName: 'Column Name',
+    systemFieldName: 'UI Field Name',
+    formField: 'Form Field',
+    fieldCategory: 'Field Category',
+    fieldRequirement: 'Field Requirement',
+    dependentField: 'Dependent Field',
+    dataType: 'Field Data Type',
+    maxLength: 'Field Maximum Length',
+    numericPrecision: 'Field Numeric Precision',
+    numericScale: 'Field Numeric Scale',
+    defaultValue: 'Field Default Value',
+    editableByUser: 'Field Editable by User',
+    validationRuleExists: 'Field Business Validation Rule',
+    derivationRuleExists: 'Field Business Derivation Rule',
+    allowedValues: 'Field Allowed Values',
+    standardValues: 'Field Standard Values',
+    positionInTemplate: 'Field Position in Template',
+  };
+
+  form!: FormGroup;
+
+  constructor(private fb: FormBuilder) {}
+
+  ngOnInit(): void {
+    this.form = this.fb.group({
+      rows: this.fb.array([], { validators: [this.uniqueSystemFieldNameValidator()] }),
+    });
+
+    this.buildRowsFromApi();
+  }
+
+  get rows(): FormArray {
+    return this.form.get('rows') as FormArray;
+  }
+
+  // =========================
+  // Build rows from new API
+  // =========================
+  private buildRowsFromApi(): void {
+    Object.keys(this.apiMetaData).forEach((tableName) => {
+      const columnsObj = this.apiMetaData[tableName] || {};
+      Object.keys(columnsObj).forEach((columnName) => {
+        const meta = columnsObj[columnName] || {};
+        const existing = this.existingData?.[tableName]?.[columnName] ?? null;
+
+        const row = this.createRow(tableName, columnName, meta, existing);
+        this.rows.push(row);
+
+        this.applyRules(row);
+        this.wireRules(row);
+
+        // Lock existing rows (only user fields) if required
+        if (existing && !this.enableExistingRows) {
+          this.disableUserInputs(row); // meta already readonly anyway
+        }
+      });
+    });
+  }
+
+  private disableUserInputs(row: FormGroup): void {
+    [
+      'system_field_name',
+      'form_field',
+      'field_category',
+      'field_requirement',
+      'dependent_field',
+      'field_default_value',
+      'field_editable',
+      'field_validation_rule_exists',
+      'field_derivation_rule_exists',
+      'field_allowed_values',
+      'field_standard_values',
+      'field_position_in_template',
+    ].forEach((k) => row.get(k)?.disable({ emitEvent: false }));
+  }
+
+  // =========================
+  // Row creation
+  // =========================
+  private createRow(tableName: string, columnName: string, meta: AnyObj, existing: AnyObj | null): FormGroup {
+    const isExisting = !!existing;
+
+    return this.fb.group({
+      // Always keep keys for payload
+      table_name: new FormControl(tableName),
+      column_name: new FormControl(columnName),
+
+      // -------- META (as-is, readonly in UI) --------
+      ordinal_position: new FormControl({ value: meta.ordinal_position ?? null, disabled: true }),
+      is_nullable: new FormControl({ value: meta.is_nullable ?? null, disabled: true }),
+      data_type: new FormControl({ value: meta.data_type ?? null, disabled: true }),
+      character_maximum_length: new FormControl({ value: meta.character_maximum_length ?? null, disabled: true }),
+      numeric_precision: new FormControl({ value: meta.numeric_precision ?? null, disabled: true }),
+      numeric_scale: new FormControl({ value: meta.numeric_scale ?? null, disabled: true }),
+      is_key_mapped: new FormControl({ value: meta.is_key_mapped ?? null, disabled: true }),
+
+      // -------- USER FIELDS (saved) --------
+      system_field_name: new FormControl(isExisting ? existing.system_field_name : null, [
+        Validators.required,
+        Validators.minLength(5),
+        Validators.maxLength(50),
+        Validators.pattern(/^[A-Za-z ]+$/),
+      ]),
+
+      form_field: new FormControl(isExisting ? existing.form_field : null, Validators.required),
+      field_category: new FormControl(isExisting ? existing.field_category : null, Validators.required),
+
+      field_requirement: new FormControl(isExisting ? existing.field_requirement : null),
+      dependent_field: new FormControl(isExisting ? existing.dependent_field : null),
+
+      field_default_value: new FormControl(isExisting ? existing.field_default_value : null),
+
+      field_editable: new FormControl(isExisting ? existing.field_editable : null, Validators.required),
+      field_validation_rule_exists: new FormControl(
+        isExisting ? existing.field_validation_rule_exists : null,
+        Validators.required
+      ),
+      field_derivation_rule_exists: new FormControl(
+        isExisting ? existing.field_derivation_rule_exists : null,
+        Validators.required
+      ),
+
+      field_allowed_values: new FormControl(isExisting ? existing.field_allowed_values : null),
+      field_standard_values: new FormControl(isExisting ? existing.field_standard_values : null),
+
+      field_position_in_template: new FormControl(
+        isExisting ? existing.field_position_in_template : null,
+        Validators.required
+      ),
+    });
+  }
+
+  // =========================
+  // Rules Engine
+  // =========================
+  private wireRules(row: FormGroup): void {
+    row.get('field_category')?.valueChanges.subscribe(() => this.applyRules(row));
+    row.get('field_requirement')?.valueChanges.subscribe(() => this.applyRules(row));
+    row.get('field_allowed_values')?.valueChanges.subscribe(() => this.applyRules(row));
+    row.get('field_default_value')?.valueChanges.subscribe(() => this.applyRules(row));
+  }
+
+  private applyRules(row: FormGroup): void {
+    const fieldCategory = row.get('field_category')!;
+    const fieldRequirement = row.get('field_requirement')!;
+    const dependentField = row.get('dependent_field')!;
+    const allowedValues = row.get('field_allowed_values')!;
+    const standardValues = row.get('field_standard_values')!;
+    const defaultValue = row.get('field_default_value')!;
+    const dataType = row.get('data_type')!.value;
+
+    // (6) Field Requirement enabled/required only when category != Derived
+    if (fieldCategory.value === 'Derived') {
+      fieldRequirement.setValue(null, { emitEvent: false });
+      fieldRequirement.clearValidators();
+      fieldRequirement.disable({ emitEvent: false });
+    } else {
+      fieldRequirement.enable({ emitEvent: false });
+      fieldRequirement.setValidators([Validators.required]);
+    }
+    fieldRequirement.updateValueAndValidity({ emitEvent: false });
+
+    // (7) Dependent Field required only when "Conditionally mandatory"
+    const hasOtherNames = this.getDependentOptionsByRow(row).length > 0;
+    if (fieldRequirement.value === 'Conditionally mandatory' && hasOtherNames) {
+      dependentField.enable({ emitEvent: false });
+      dependentField.setValidators([Validators.required]);
+    } else {
+      dependentField.setValue(null, { emitEvent: false });
+      dependentField.clearValidators();
+      dependentField.disable({ emitEvent: false });
+    }
+    dependentField.updateValueAndValidity({ emitEvent: false });
+
+    // (12) Default value validation based on data_type
+    defaultValue.clearValidators();
+    if (defaultValue.value !== null && String(defaultValue.value).trim() !== '') {
+      if (String(dataType).toLowerCase() === 'character varying') {
+        defaultValue.setValidators([Validators.pattern(/^[A-Za-z0-9]+$/)]);
+      } else {
+        // number / bigint / numeric
+        defaultValue.setValidators([Validators.pattern(/^\d+$/)]);
+      }
+    }
+    defaultValue.updateValueAndValidity({ emitEvent: false });
+
+    // (16) Allowed values enabled only when defaultValue is NOT empty
+    if (defaultValue.value !== null && String(defaultValue.value).trim() !== '') {
+      allowedValues.enable({ emitEvent: false });
+      allowedValues.setValidators([Validators.required]);
+    } else {
+      allowedValues.setValue(null, { emitEvent: false });
+      allowedValues.clearValidators();
+      allowedValues.disable({ emitEvent: false });
+    }
+    allowedValues.updateValueAndValidity({ emitEvent: false });
+
+    // (17) Standard values enabled only when allowedValues = STANDARD_VALUES
+    if (allowedValues.value === 'STANDARD_VALUES') {
+      standardValues.enable({ emitEvent: false });
+      standardValues.setValidators([Validators.required, this.standardValuesValidator()]);
+    } else {
+      standardValues.setValue(null, { emitEvent: false });
+      standardValues.clearValidators();
+      standardValues.disable({ emitEvent: false });
+    }
+    standardValues.updateValueAndValidity({ emitEvent: false });
+  }
+
+  // =========================
+  // Dependent options
+  // =========================
+  getDependentOptions(i: number): string[] {
+    const row = this.rows.at(i) as FormGroup;
+    return this.getDependentOptionsByRow(row);
+  }
+
+  private getDependentOptionsByRow(currentRow: FormGroup): string[] {
+    const current = (currentRow.get('system_field_name')?.value ?? '').trim();
+
+    return this.rows.controls
+      .map((r) => (r as FormGroup).get('system_field_name')?.value)
+      .map((v) => (v ?? '').toString().trim())
+      .filter((v) => !!v && v !== current);
+  }
+
+  // =========================
+  // Inline validation + row highlight
+  // =========================
+  isInvalid(i: number, controlName: string): boolean {
+    const ctrl = (this.rows.at(i) as FormGroup).get(controlName);
+    if (!ctrl) return false;
+    const show = this.submitAttempted || ctrl.touched || ctrl.dirty;
+    return show && ctrl.invalid;
+  }
+
+  rowHasErrors(i: number): boolean {
+    const row = this.rows.at(i) as FormGroup;
+    const show = this.submitAttempted;
+    return show && row.enabled && row.invalid;
+  }
+
+  getError(i: number, controlName: string): string {
+    const ctrl = (this.rows.at(i) as FormGroup).get(controlName);
+    if (!ctrl) return '';
+    const show = this.submitAttempted || ctrl.touched || ctrl.dirty;
+    if (!show || !ctrl.errors) return '';
+
+    const e = ctrl.errors;
+
+    if (e['required']) return 'Required';
+    if (e['minlength']) return `Min ${e['minlength'].requiredLength} characters`;
+    if (e['maxlength']) return `Max ${e['maxlength'].requiredLength} characters`;
+    if (e['pattern']) {
+      if (controlName === 'system_field_name') return 'Only A-Z and spaces allowed';
+      if (controlName === 'field_default_value') return 'Invalid format for selected data type';
+      return 'Invalid format';
+    }
+    if (e['duplicate']) return 'UI Field Name must be unique';
+    if (e['maxStandardValues']) return 'Max 10 comma-separated values';
+    if (e['invalidStandardValue']) return 'Use numbers OR quoted values like "ABC"';
+
+    return 'Invalid value';
+  }
+
+  // =========================
+  // Validators
+  // =========================
+  private uniqueSystemFieldNameValidator(): ValidatorFn {
+    return (fa: AbstractControl) => {
+      const arr = fa as FormArray;
+      const seen = new Map<string, number>();
+
+      for (let i = 0; i < arr.length; i++) {
+        const row = arr.at(i) as FormGroup;
+        const ctrl = row.get('system_field_name');
+        const name = (ctrl?.value ?? '').toString().trim().toLowerCase();
+        if (!name) continue;
+
+        if (seen.has(name)) {
+          ctrl?.setErrors({ ...(ctrl.errors ?? {}), duplicate: true });
+        } else {
+          seen.set(name, i);
+          if (ctrl?.errors?.['duplicate']) {
+            const { duplicate, ...rest } = ctrl.errors;
+            ctrl.setErrors(Object.keys(rest).length ? rest : null);
+          }
+        }
+      }
+      return null;
+    };
+  }
+
+  private standardValuesValidator(): ValidatorFn {
+    return (control: AbstractControl) => {
+      const raw = (control.value ?? '').toString().trim();
+      if (!raw) return null;
+
+      const items = raw.split(',').map((x) => x.trim()).filter(Boolean);
+      if (items.length > 10) return { maxStandardValues: true };
+
+      const bad = items.some((v) => {
+        if (/^\d+$/.test(v)) return false;      // number
+        if (/^".+"$/.test(v)) return false;     // quoted alpha/alphanumeric
+        return true;
+      });
+
+      return bad ? { invalidStandardValue: true } : null;
+    };
+  }
+
+  // =========================
+  // Save (All rows by default)
+  // =========================
+  private isStartedRow(row: FormGroup): boolean {
+    // used only when partialSaveEnabled = true
+    const keys = [
+      'system_field_name',
+      'form_field',
+      'field_category',
+      'field_requirement',
+      'field_default_value',
+      'field_position_in_template',
+    ];
+    return keys.some((k) => {
+      const v = row.get(k)?.value;
+      return v !== null && v !== undefined && String(v).trim() !== '';
+    });
+  }
+
+  save(): void {
+    this.submitAttempted = true;
+
+    // 1) decide what rows are part of this save
+    const rowsToSave = this.rows.controls.filter((r) => {
+      const row = r as FormGroup;
+      if (!row.enabled) return false; // locked existing user inputs remain disabled, but still need payload
+      // NOTE: we still include locked existing rows in payload via getRawValue at the end.
+      return true;
+    });
+
+    // If partial saves enabled, validate only started rows (draft rows)
+    const validateRows = this.partialSaveEnabled
+      ? this.rows.controls.filter((r) => (r as FormGroup).enabled && this.isStartedRow(r as FormGroup))
+      : this.rows.controls.filter((r) => (r as FormGroup).enabled);
+
+    // 2) validate
+    let hasError = false;
+    validateRows.forEach((r) => {
+      const row = r as FormGroup;
+      row.markAllAsTouched();
+      row.updateValueAndValidity({ emitEvent: false });
+      if (row.invalid) hasError = true;
+    });
+
+    if (hasError) {
+      // rows are already highlighted + inline errors shown
+      console.log('Save Failed');
+      return;
+    }
+
+    // 3) build payload in same structure table -> column -> {meta + user fields}
+    const payload: TableColumnMap = {};
+
+    this.rows.controls.forEach((r) => {
+      const row = r as FormGroup;
+
+      // include all rows when partialSaveEnabled = false
+      // include only started rows when partialSaveEnabled = true (future)
+      if (this.partialSaveEnabled && !this.isStartedRow(row)) return;
+
+      const raw = row.getRawValue(); // includes disabled meta + disabled existing user fields
+      const table = raw.table_name;
+      const col = raw.column_name;
+
+      payload[table] ??= {};
+      payload[table][col] = {
+        // meta fields as-is
+        ordinal_position: raw.ordinal_position,
+        is_nullable: raw.is_nullable,
+        data_type: raw.data_type,
+        character_maximum_length: raw.character_maximum_length,
+        numeric_precision: raw.numeric_precision,
+        numeric_scale: raw.numeric_scale,
+        is_key_mapped: raw.is_key_mapped,
+
+        // user fields
+        system_field_name: raw.system_field_name,
+        form_field: raw.form_field,
+        field_category: raw.field_category,
+        field_requirement: raw.field_requirement,
+        dependent_field: raw.dependent_field,
+        field_default_value: raw.field_default_value,
+        field_editable: raw.field_editable,
+        field_validation_rule_exists: raw.field_validation_rule_exists,
+        field_derivation_rule_exists: raw.field_derivation_rule_exists,
+        field_allowed_values: raw.field_allowed_values,
+        field_standard_values: raw.field_standard_values,
+        field_position_in_template: raw.field_position_in_template,
+      };
+    });
+
+    console.log('FINAL PAYLOAD', payload);
+    this.payloadChange.emit(payload);
+  }
+}
+
+
+
+
+////////////// HTML //////////////////
+
+
+<form [formGroup]="form" class="fd-form">
+  <div class="table-wrap">
+    <table mat-table [dataSource]="rows.controls" formArrayName="rows" class="fd-table">
+
+      <ng-container *ngFor="let col of displayedColumns" [matColumnDef]="col">
+        <th mat-header-cell *matHeaderCellDef class="sticky-header">
+          {{ columnLabels[col] || col }}
+        </th>
+
+        <td
+          mat-cell
+          *matCellDef="let row; let i = index"
+          [formGroupName]="i"
+          [class.invalid-row]="rowHasErrors(i)"
+        >
+          <!-- READONLY TEXT CELLS -->
+          <ng-container *ngIf="col === 'tableName'">
+            {{ (rows.at(i) as any).get('table_name').value }}
+          </ng-container>
+
+          <ng-container *ngIf="col === 'columnName'">
+            {{ (rows.at(i) as any).get('column_name').value }}
+          </ng-container>
+
+          <ng-container *ngIf="col === 'dataType'">
+            {{ (rows.at(i) as any).get('data_type').value }}
+          </ng-container>
+
+          <ng-container *ngIf="col === 'maxLength'">
+            {{ (rows.at(i) as any).get('character_maximum_length').value }}
+          </ng-container>
+
+          <ng-container *ngIf="col === 'numericPrecision'">
+            {{ (rows.at(i) as any).get('numeric_precision').value }}
+          </ng-container>
+
+          <ng-container *ngIf="col === 'numericScale'">
+            {{ (rows.at(i) as any).get('numeric_scale').value }}
+          </ng-container>
+
+          <!-- INPUTS -->
+          <ng-container *ngIf="col === 'systemFieldName'">
+            <mat-form-field appearance="outline" class="cell-field">
+              <input matInput formControlName="system_field_name" />
+              <mat-error *ngIf="isInvalid(i, 'system_field_name')">
+                {{ getError(i, 'system_field_name') }}
+              </mat-error>
+            </mat-form-field>
+          </ng-container>
+
+          <ng-container *ngIf="col === 'defaultValue'">
+            <mat-form-field appearance="outline" class="cell-field">
+              <input matInput formControlName="field_default_value" />
+              <mat-error *ngIf="isInvalid(i, 'field_default_value')">
+                {{ getError(i, 'field_default_value') }}
+              </mat-error>
+            </mat-form-field>
+          </ng-container>
+
+          <ng-container *ngIf="col === 'standardValues'">
+            <mat-form-field appearance="outline" class="cell-field">
+              <input matInput formControlName="field_standard_values" />
+              <mat-error *ngIf="isInvalid(i, 'field_standard_values')">
+                {{ getError(i, 'field_standard_values') }}
+              </mat-error>
+            </mat-form-field>
+          </ng-container>
+
+          <ng-container *ngIf="col === 'positionInTemplate'">
+            <mat-form-field appearance="outline" class="cell-field">
+              <input matInput type="number" formControlName="field_position_in_template" />
+              <mat-error *ngIf="isInvalid(i, 'field_position_in_template')">
+                {{ getError(i, 'field_position_in_template') }}
+              </mat-error>
+            </mat-form-field>
+          </ng-container>
+
+          <!-- DROPDOWNS (BMO SELECT) -->
+          <ng-container *ngIf="col === 'formField'">
+            <bmo-select-box
+              [options]="formFieldOptions"
+              [internalControl]="(rows.at(i) as any).get('form_field')"
+              [errorMessage]="getError(i, 'form_field')">
+            </bmo-select-box>
+          </ng-container>
+
+          <ng-container *ngIf="col === 'fieldCategory'">
+            <bmo-select-box
+              [options]="fieldCategoryOptions"
+              [internalControl]="(rows.at(i) as any).get('field_category')"
+              [errorMessage]="getError(i, 'field_category')">
+            </bmo-select-box>
+          </ng-container>
+
+          <ng-container *ngIf="col === 'fieldRequirement'">
+            <bmo-select-box
+              [options]="fieldRequirementOptions"
+              [internalControl]="(rows.at(i) as any).get('field_requirement')"
+              [errorMessage]="getError(i, 'field_requirement')">
+            </bmo-select-box>
+          </ng-container>
+
+          <ng-container *ngIf="col === 'dependentField'">
+            <bmo-select-box
+              [options]="getDependentOptions(i)"
+              [internalControl]="(rows.at(i) as any).get('dependent_field')"
+              [errorMessage]="getError(i, 'dependent_field')">
+            </bmo-select-box>
+          </ng-container>
+
+          <ng-container *ngIf="col === 'editableByUser'">
+            <bmo-select-box
+              [options]="yesNoOptions"
+              [internalControl]="(rows.at(i) as any).get('field_editable')"
+              [errorMessage]="getError(i, 'field_editable')">
+            </bmo-select-box>
+          </ng-container>
+
+          <ng-container *ngIf="col === 'validationRuleExists'">
+            <bmo-select-box
+              [options]="yesNoOptions"
+              [internalControl]="(rows.at(i) as any).get('field_validation_rule_exists')"
+              [errorMessage]="getError(i, 'field_validation_rule_exists')">
+            </bmo-select-box>
+          </ng-container>
+
+          <ng-container *ngIf="col === 'derivationRuleExists'">
+            <bmo-select-box
+              [options]="yesNoOptions"
+              [internalControl]="(rows.at(i) as any).get('field_derivation_rule_exists')"
+              [errorMessage]="getError(i, 'field_derivation_rule_exists')">
+            </bmo-select-box>
+          </ng-container>
+
+          <ng-container *ngIf="col === 'allowedValues'">
+            <bmo-select-box
+              [options]="allowedValuesOptions"
+              [internalControl]="(rows.at(i) as any).get('field_allowed_values')"
+              [errorMessage]="getError(i, 'field_allowed_values')">
+            </bmo-select-box>
+          </ng-container>
+        </td>
+      </ng-container>
+
+      <tr mat-header-row *matHeaderRowDef="displayedColumns; sticky: true"></tr>
+      <tr mat-row *matRowDef="let r; columns: displayedColumns"></tr>
+    </table>
+  </div>
+
+  <div class="actions">
+    <button mat-raised-button color="primary" (click)="save()">Save</button>
+  </div>
+</form>
+
+
+
+/////////// CSS //////////////
+
+
+.table-wrap {
+  overflow: auto;
+  max-width: 100%;
+  border: 1px solid #e0e0e0;
+}
+
+.fd-table {
+  min-width: 1800px;
+}
+
+.cell-field {
+  width: 180px;
+}
+
+.invalid-row {
+  outline: 2px solid #d32f2f;
+  outline-offset: -2px;
+  background: rgba(211, 47, 47, 0.04);
+}
+
+.actions {
+  margin-top: 12px;
+}
