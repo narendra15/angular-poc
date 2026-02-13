@@ -1,0 +1,1006 @@
+import { Component, EventEmitter, Input, OnChanges, Output, SimpleChanges } from '@angular/core';
+import {
+  AbstractControl,
+  FormArray,
+  FormBuilder,
+  FormControl,
+  FormGroup,
+  ValidationErrors,
+  ValidatorFn,
+  Validators,
+} from '@angular/forms';
+import { Observable, of } from 'rxjs';
+import { catchError, finalize, map } from 'rxjs/operators';
+
+type DependencyCriteria = 'On_Rule_Satidfied' | 'On_Rule_Not_Satisfied';
+type InputType = 'User Field Name' | 'SQL' | 'Literal' | 'List';
+
+interface SelectOption<T = any> {
+  label: string;
+  value: T;
+}
+
+@Component({
+  selector: 'app-derivation-rules-child',
+  templateUrl: './derivation-rules-child.component.html',
+  styleUrls: ['./derivation-rules-child.component.scss'],
+})
+export class DerivationRulesChildComponent implements OnChanges {
+  // ===========================
+  // Inputs/Outputs
+  // ===========================
+  @Input() existingRuleNames: string[] = [];
+  @Input() existingInputNames: string[] = [];
+  @Input() existingFormulaNames: string[] = [];
+  @Input() userFieldNameOptions: string[] = [];
+
+  /**
+   * Optional API function for SQL validation.
+   * Parent can pass: (sql) => http.post('/validate-sql', { sql })
+   * Expected response: { success: boolean; message?: string }
+   */
+  @Input() validateSqlFn?: (sqlQuery: string) => Observable<{ success: boolean; message?: string }>;
+
+  @Output() saveDerivationRule = new EventEmitter<any>();
+
+  // ===========================
+  // Constants (avoid typos)
+  // ===========================
+  readonly INPUT_TYPE_UFN: InputType = 'User Field Name';
+  readonly INPUT_TYPE_SQL: InputType = 'SQL';
+  readonly INPUT_TYPE_LITERAL: InputType = 'Literal';
+  readonly INPUT_TYPE_LIST: InputType = 'List';
+
+  // ===========================
+  // UI Options
+  // ===========================
+  dependencyCriteriaOptions: SelectOption<DependencyCriteria>[] = [
+    { label: 'On_Rule_Satidfied', value: 'On_Rule_Satidfied' },
+    { label: 'On_Rule_Not_Satisfied', value: 'On_Rule_Not_Satisfied' },
+  ];
+
+  dependentRuleOptions: SelectOption<string | null>[] = [];
+
+  inputTypeOptions: SelectOption<InputType>[] = [
+    { label: 'User Field Name', value: 'User Field Name' },
+    { label: 'SQL', value: 'SQL' },
+    { label: 'Literal', value: 'Literal' },
+    { label: 'List', value: 'List' },
+  ];
+
+  userFieldSelectOptions: SelectOption<string>[] = [];
+
+  // ===========================
+  // UI Messages
+  // ===========================
+  derivationInputMessages: { type: 'error' | 'success'; text: string }[] = [];
+  formulaMessages: { type: 'error' | 'success'; text: string }[] = [];
+
+  // Formula must be explicitly validated
+  formulaValidated = false;
+
+  // ===========================
+  // Main Form
+  // ===========================
+  form: FormGroup = this.fb.group({
+    // 1) Rule name
+    rule_name: [
+      '',
+      [
+        Validators.required,
+        lowercaseUnderscoreOnlyValidator(),
+        uniqueAgainstProvidedListValidator(() => this.existingRuleNames),
+      ],
+    ],
+
+    // 2) Dependency criteria (enabled only when rule_name is valid)
+    dependency_criteria: [{ value: null, disabled: true }, [Validators.required]],
+
+    // 3) Dependent rule name (enabled only when dependency_criteria selected)
+    dependent_rule_name: [{ value: null, disabled: true }], // can be null => Not applicable
+
+    // Derivation Inputs table (FormArray)
+    derivation_inputs: this.fb.array([]),
+
+    // Derivation formula table (single row, FormGroup)
+    formula: this.fb.group({
+      formula_name: [
+        '',
+        [
+          Validators.required,
+          lowercaseUnderscoreOnlyValidator(),
+          uniqueAgainstProvidedListValidator(() => this.existingFormulaNames),
+        ],
+      ],
+      expression: ['', [Validators.required]],
+      priority: [null, [Validators.required, Validators.pattern(/^\d+$/)]],
+    }),
+  });
+
+  constructor(private fb: FormBuilder) {
+    this.wireEnableDisableLogic();
+  }
+
+  // ===========================
+  // Lifecycle
+  // ===========================
+  ngOnChanges(changes: SimpleChanges): void {
+    // Rule names updated => refresh dependent rule dropdown + rule_name uniqueness
+    if (changes['existingRuleNames']) {
+      this.dependentRuleOptions = [
+        { label: 'Not applicable', value: null },
+        ...(this.existingRuleNames || []).map((r) => ({ label: r, value: r })),
+      ];
+      this.form.get('rule_name')?.updateValueAndValidity({ emitEvent: false });
+    }
+
+    // Formula names updated => refresh formula_name uniqueness
+    if (changes['existingFormulaNames']) {
+      this.formulaGroup.get('formula_name')?.updateValueAndValidity({ emitEvent: false });
+    }
+
+    // User field names updated => refresh User Field dropdown options
+    if (changes['userFieldNameOptions']) {
+      this.userFieldSelectOptions = (this.userFieldNameOptions || []).map((v) => ({ label: v, value: v }));
+    }
+
+    // Input names updated => refresh row uniqueness
+    if (changes['existingInputNames']) {
+      this.derivationInputs.controls.forEach((row) => {
+        row.get('input_name')?.updateValueAndValidity({ emitEvent: false });
+      });
+    }
+  }
+
+  // ===========================
+  // Getters
+  // ===========================
+  get derivationInputs(): FormArray<FormGroup> {
+    return this.form.get('derivation_inputs') as FormArray<FormGroup>;
+  }
+
+  get formulaGroup(): FormGroup {
+    return this.form.get('formula') as FormGroup;
+  }
+
+  // ===========================
+  // Messages (helpers)
+  // ===========================
+  private resetMessages(): void {
+    this.derivationInputMessages = [];
+    this.formulaMessages = [];
+  }
+
+  private showInputError(msg: string): void {
+    this.derivationInputMessages = [{ type: 'error', text: msg }];
+  }
+
+  private showInputSuccess(msg: string): void {
+    this.derivationInputMessages = [{ type: 'success', text: msg }];
+  }
+
+  private showFormulaError(msg: string): void {
+    this.formulaMessages = [{ type: 'error', text: msg }];
+  }
+
+  private showFormulaSuccess(msg: string): void {
+    this.formulaMessages = [{ type: 'success', text: msg }];
+  }
+
+  // ===========================
+  // Enable/Disable chaining for top fields
+  // ===========================
+  private wireEnableDisableLogic(): void {
+    const ruleNameCtrl = this.form.get('rule_name') as FormControl;
+    const depCritCtrl = this.form.get('dependency_criteria') as FormControl;
+    const depRuleCtrl = this.form.get('dependent_rule_name') as FormControl;
+
+    // Rule name controls enablement of dependency criteria
+    ruleNameCtrl.valueChanges.subscribe(() => {
+      this.resetMessages();
+      this.formulaValidated = false;
+
+      if (ruleNameCtrl.value && ruleNameCtrl.valid) {
+        depCritCtrl.enable({ emitEvent: false });
+      } else {
+        depCritCtrl.reset(null, { emitEvent: false });
+        depCritCtrl.disable({ emitEvent: false });
+
+        depRuleCtrl.reset(null, { emitEvent: false });
+        depRuleCtrl.disable({ emitEvent: false });
+
+        this.clearAllInputRows();
+      }
+    });
+
+    // Dependency criteria controls enablement of dependent rule dropdown
+    depCritCtrl.valueChanges.subscribe(() => {
+      this.resetMessages();
+      this.formulaValidated = false;
+
+      if (depCritCtrl.value) {
+        depRuleCtrl.enable({ emitEvent: false });
+      } else {
+        depRuleCtrl.reset(null, { emitEvent: false });
+        depRuleCtrl.disable({ emitEvent: false });
+
+        this.clearAllInputRows();
+      }
+    });
+
+    // Dependent rule dropdown selection triggers showing the inputs container (add first row)
+    depRuleCtrl.valueChanges.subscribe(() => {
+      this.resetMessages();
+      this.formulaValidated = false;
+
+      if (depCritCtrl.value) {
+        if (this.derivationInputs.length === 0) {
+          this.addInputRow(); // creates Input_1
+        }
+      } else {
+        this.clearAllInputRows();
+      }
+    });
+  }
+
+  // ===========================
+  // Derivation Inputs (FormArray rows)
+  // ===========================
+  private createInputRow(): FormGroup {
+    const row = this.fb.group({
+      label: [''], // Input_1, Input_2...
+      input_name: [
+        '',
+        [
+          Validators.required,
+          lowercaseUnderscoreOnlyValidator(),
+          uniqueInputNameAcrossRowsValidator(() => this.derivationInputs, () => this.existingInputNames),
+        ],
+      ],
+      input_type: [null, [Validators.required]],
+      input_value: [null],
+
+      // SQL-specific state
+      sql_validated: [true],
+      sql_error: [null],
+    });
+
+    // When input type changes: reset value + enforce SQL validation requirement if needed
+    row.get('input_type')?.valueChanges.subscribe((t: InputType) => {
+      row.patchValue(
+        {
+          input_value: null,
+          sql_validated: t === this.INPUT_TYPE_SQL ? false : true,
+          sql_error: null,
+        },
+        { emitEvent: false }
+      );
+
+      this.derivationInputMessages = [];
+      this.formulaValidated = false;
+    });
+
+    // When input_value changes and row type is SQL: require re-validate
+    row.get('input_value')?.valueChanges.subscribe(() => {
+      const t = row.get('input_type')?.value as InputType;
+      if (t === this.INPUT_TYPE_SQL) {
+        row.patchValue({ sql_validated: false, sql_error: null }, { emitEvent: false });
+      }
+      this.derivationInputMessages = [];
+      this.formulaValidated = false;
+    });
+
+    // When input_name changes: refresh validators for all rows + invalidate formula
+    row.get('input_name')?.valueChanges.subscribe(() => {
+      this.formulaValidated = false;
+      this.formulaMessages = [];
+
+      this.derivationInputs.controls.forEach((r) => {
+        r.get('input_name')?.updateValueAndValidity({ emitEvent: false });
+      });
+    });
+
+    return row;
+  }
+
+  addInputRow(): void {
+    this.derivationInputMessages = [];
+
+    // Block adding if any SQL row is not validated
+    if (!this.canAddAnotherInputRow()) {
+      this.showInputError('Please validate the SQL query before adding another input.');
+      return;
+    }
+
+    const row = this.createInputRow();
+    this.derivationInputs.push(row);
+    this.refreshRowLabels();
+  }
+
+  removeInputRow(index: number): void {
+    this.derivationInputMessages = [];
+    this.derivationInputs.removeAt(index);
+    this.refreshRowLabels();
+
+    // After remove, update uniqueness checks
+    this.derivationInputs.controls.forEach((r) => r.get('input_name')?.updateValueAndValidity({ emitEvent: false }));
+
+    this.formulaValidated = false;
+  }
+
+  private refreshRowLabels(): void {
+    this.derivationInputs.controls.forEach((row, i) => {
+      row.get('label')?.setValue(`Input_${i + 1}`, { emitEvent: false });
+    });
+  }
+
+  private clearAllInputRows(): void {
+    while (this.derivationInputs.length) {
+      this.derivationInputs.removeAt(0);
+    }
+    this.derivationInputMessages = [];
+    this.formulaValidated = false;
+  }
+
+  // ===========================
+  // SQL Validation (row-level)
+  // ===========================
+  validateSqlRow(index: number): void {
+    this.derivationInputMessages = [];
+
+    const row = this.derivationInputs.at(index) as FormGroup;
+    const type = row.get('input_type')?.value as InputType;
+
+    if (type !== this.INPUT_TYPE_SQL) return;
+
+    const sql = (row.get('input_value')?.value || '').toString();
+
+    if (!sql.trim()) {
+      row.patchValue({ sql_validated: false, sql_error: 'SQL query cannot be empty.' }, { emitEvent: false });
+      this.showInputError('SQL query cannot be empty.');
+      return;
+    }
+
+    // Use parent provided API fn if present, else stub success (so UI can work)
+    const validateFn =
+      this.validateSqlFn ??
+      ((q: string) => {
+        return of({ success: true, message: 'SQL validated successfully.' });
+      });
+
+    row.patchValue({ sql_error: null }, { emitEvent: false });
+
+    validateFn(sql)
+      .pipe(
+        map((res) => {
+          if (res?.success) return { ok: true, msg: res.message || 'SQL validated successfully.' };
+          return { ok: false, msg: res?.message || 'SQL validation failed.' };
+        }),
+        catchError(() => of({ ok: false, msg: 'SQL validation failed.' })),
+        finalize(() => {})
+      )
+      .subscribe((result) => {
+        if (result.ok) {
+          row.patchValue({ sql_validated: true, sql_error: null }, { emitEvent: false });
+          this.showInputSuccess(result.msg);
+        } else {
+          row.patchValue({ sql_validated: false, sql_error: result.msg }, { emitEvent: false });
+          this.showInputError(result.msg);
+        }
+      });
+  }
+
+  isSqlRow(index: number): boolean {
+    return (this.derivationInputs.at(index)?.get('input_type')?.value as InputType) === this.INPUT_TYPE_SQL;
+  }
+
+  sqlRowHasError(index: number): boolean {
+    return !!this.derivationInputs.at(index)?.get('sql_error')?.value;
+  }
+
+  sqlRowValidated(index: number): boolean {
+    return this.derivationInputs.at(index)?.get('sql_validated')?.value === true;
+  }
+
+  /**
+   * If ANY SQL row is not validated => block add/save
+   */
+  canAddAnotherInputRow(): boolean {
+    return this.derivationInputs.controls.every((row) => {
+      const t = row.get('input_type')?.value as InputType;
+      if (t === this.INPUT_TYPE_SQL) return row.get('sql_validated')?.value === true;
+      return true;
+    });
+  }
+
+  // ===========================
+  // Formula Validation
+  // ===========================
+  validateFormula(): void {
+    this.formulaMessages = [];
+
+    if (this.formulaGroup.invalid) {
+      this.showFormulaError('Please fix formula fields before validating.');
+      this.formulaValidated = false;
+      return;
+    }
+
+    const definedInputs = this.getDefinedDerivationInputNames();
+    if (definedInputs.length === 0) {
+      this.showFormulaError('Please define at least one derivation input name.');
+      this.formulaValidated = false;
+      return;
+    }
+
+    const expr = (this.formulaGroup.get('expression')?.value || '').toString();
+
+    // Allowed: a-z, 0-9, _, spaces, (), + - * / % .
+    const allowedChars = /^[a-z0-9_\s()+\-*/%.]*$/;
+    if (!allowedChars.test(expr)) {
+      this.showFormulaError('Expression contains invalid characters.');
+      this.formulaValidated = false;
+      return;
+    }
+
+    if (!this.isParenthesesBalanced(expr)) {
+      this.showFormulaError('Parentheses are not balanced in the expression.');
+      this.formulaValidated = false;
+      return;
+    }
+
+    // Extract variable-like tokens and validate they exist in defined inputs
+    const tokens = expr.match(/[a-z_][a-z0-9_]*/g) || [];
+    const uniqueTokens = Array.from(new Set(tokens));
+
+    const invalidVars = uniqueTokens.filter((t) => !definedInputs.includes(t));
+    if (invalidVars.length) {
+      this.showFormulaError(`Unknown variable(s): ${invalidVars.join(', ')}`);
+      this.formulaValidated = false;
+      return;
+    }
+
+    this.showFormulaSuccess('Formula validation passed.');
+    this.formulaValidated = true;
+  }
+
+  private getDefinedDerivationInputNames(): string[] {
+    return this.derivationInputs.controls
+      .map((row) => (row.get('input_name')?.value || '').toString().trim())
+      .filter(Boolean);
+  }
+
+  private isParenthesesBalanced(s: string): boolean {
+    let c = 0;
+    for (const ch of s) {
+      if (ch === '(') c++;
+      if (ch === ')') c--;
+      if (c < 0) return false;
+    }
+    return c === 0;
+  }
+
+  // ===========================
+  // Save (emit payload)
+  // ===========================
+  save(): void {
+    this.resetMessages();
+
+    // Top fields
+    if (this.form.get('rule_name')?.invalid) {
+      this.showInputError('Please fix Rule Name.');
+      return;
+    }
+    if (this.form.get('dependency_criteria')?.invalid) {
+      this.showInputError('Please select Rule Dependency Criteria.');
+      return;
+    }
+    if (this.form.get('dependent_rule_name')?.disabled) {
+      this.showInputError('Please select Dependent Rule Name.');
+      return;
+    }
+
+    // Inputs must be valid
+    if (this.derivationInputs.invalid) {
+      this.showInputError('Please fix errors in derivation inputs.');
+      return;
+    }
+
+    // SQL must be validated if present
+    if (!this.canAddAnotherInputRow()) {
+      this.showInputError('Please validate the SQL query before saving.');
+      return;
+    }
+
+    // Formula must be validated via button
+    if (!this.formulaValidated) {
+      this.showFormulaError('Please validate the formula before saving.');
+      return;
+    }
+
+    this.saveDerivationRule.emit(this.buildPayload());
+  }
+
+  private buildPayload(): any {
+    const ruleName = (this.form.get('rule_name')?.value || '').toString().trim();
+    const dependencyCriteria = this.form.get('dependency_criteria')?.value as DependencyCriteria;
+    const dependentRuleName = this.form.get('dependent_rule_name')?.value as string | null;
+
+    const derivationInputs = this.derivationInputs.controls.map((row, i) => {
+      const inputType = row.get('input_type')?.value as InputType;
+      const inputValue = row.get('input_value')?.value;
+
+      return {
+        input_order: i + 1,
+        input_label: row.get('label')?.value,
+        input_name: (row.get('input_name')?.value || '').toString().trim(),
+        input_type: inputType,
+        input_value: this.transformValueForPayload(inputType, inputValue),
+      };
+    });
+
+    const formula = {
+      formula_name: (this.formulaGroup.get('formula_name')?.value || '').toString().trim(),
+      expression: (this.formulaGroup.get('expression')?.value || '').toString(),
+      priority: Number(this.formulaGroup.get('priority')?.value),
+    };
+
+    return {
+      rule_name: ruleName,
+      dependency_criteria: dependencyCriteria,
+      dependent_rule_name: dependentRuleName,
+      derivation_inputs: derivationInputs,
+      derivation_formula: formula,
+    };
+  }
+
+  private transformValueForPayload(type: InputType, value: any): any {
+    if (type === this.INPUT_TYPE_LIST) {
+      const raw = (value ?? '').toString().trim();
+      return raw ? `<${raw}>` : null;
+    }
+    return value ?? null;
+  }
+}
+
+/** ---------------- Validators ---------------- */
+
+function lowercaseUnderscoreOnlyValidator(): ValidatorFn {
+  const re = /^[a-z_]+$/;
+  return (control: AbstractControl): ValidationErrors | null => {
+    const v = (control.value ?? '').toString();
+    if (!v) return null;
+    return re.test(v) ? null : { lowercase_underscore_only: true };
+  };
+}
+
+/**
+ * Unique check only against provided array (for Rule name / Formula name)
+ */
+function uniqueAgainstProvidedListValidator(getList: () => string[]): ValidatorFn {
+  return (control: AbstractControl): ValidationErrors | null => {
+    const v = (control.value ?? '').toString().trim();
+    if (!v) return null;
+
+    const list = (getList?.() || []).map((x) => (x ?? '').toString().trim()).filter(Boolean);
+    return list.includes(v) ? { not_unique: true } : null;
+  };
+}
+
+/**
+ * Unique check for input_name across:
+ * 1) existingInputNames (provided array)
+ * 2) other rows in FormArray (self allowed once)
+ */
+function uniqueInputNameAcrossRowsValidator(
+  getFormArray: () => FormArray<FormGroup>,
+  getExisting: () => string[]
+): ValidatorFn {
+  return (control: AbstractControl): ValidationErrors | null => {
+    const v = (control.value ?? '').toString().trim();
+    if (!v) return null;
+
+    const existing = (getExisting?.() || []).map((x) => (x ?? '').toString().trim()).filter(Boolean);
+    if (existing.includes(v)) return { not_unique: true };
+
+    const arr = getFormArray?.();
+    if (!arr) return null;
+
+    const matches = arr.controls
+      .map((row) => (row.get('input_name')?.value || '').toString().trim())
+      .filter(Boolean)
+      .filter((name) => name === v).length;
+
+    return matches > 1 ? { not_unique: true } : null;
+  };
+}
+
+
+
+
+////////// HTML ///////////
+
+
+
+<form [formGroup]="form" class="derivation-rule-form">
+
+  <!-- Top 3 fields -->
+  <div class="top-fields">
+    <!-- 1) Rule name -->
+    <div class="field">
+      <label>Rule name</label>
+      <input type="text" formControlName="rule_name" placeholder="e.g. rule_name_1" />
+
+      <div class="err" *ngIf="form.get('rule_name')?.touched && form.get('rule_name')?.invalid">
+        <div *ngIf="form.get('rule_name')?.errors?.['required']">Rule name is required.</div>
+        <div *ngIf="form.get('rule_name')?.errors?.['lowercase_underscore_only']">
+          Only lowercase a-z and _ allowed.
+        </div>
+        <div *ngIf="form.get('rule_name')?.errors?.['not_unique']">Rule name must be unique.</div>
+      </div>
+    </div>
+
+    <!-- 2) Dependency criteria -->
+    <div class="field">
+      <label>Rule Dependency criteria</label>
+
+      <bmo-select-box
+        formControlName="dependency_criteria"
+        [options]="dependencyCriteriaOptions"
+        optionLabel="label"
+        optionValue="value">
+      </bmo-select-box>
+
+      <div class="hint" *ngIf="form.get('dependency_criteria')?.disabled">
+        Select enabled only after Rule name is valid.
+      </div>
+    </div>
+
+    <!-- 3) Dependent Rule Name -->
+    <div class="field">
+      <label>Dependent Rule Name</label>
+
+      <bmo-select-box
+        formControlName="dependent_rule_name"
+        [options]="dependentRuleOptions"
+        optionLabel="label"
+        optionValue="value">
+      </bmo-select-box>
+
+      <div class="hint" *ngIf="form.get('dependent_rule_name')?.disabled">
+        Select enabled only after Dependency criteria selected.
+      </div>
+    </div>
+  </div>
+
+  <!-- Derivation Inputs Container -->
+  <div class="container" *ngIf="form.get('dependency_criteria')?.value">
+    <div class="container-title">Derivation inputs</div>
+
+    <!-- messages on top -->
+    <div class="msg" *ngFor="let m of derivationInputMessages" [class.err]="m.type==='error'" [class.ok]="m.type==='success'">
+      {{ m.text }}
+    </div>
+
+    <table class="no-header-table">
+      <tbody formArrayName="derivation_inputs">
+        <tr *ngFor="let row of derivationInputs.controls; let i = index" [formGroupName]="i">
+          <!-- Col1: Input_# -->
+          <td class="col-label">
+            {{ row.get('label')?.value }}
+          </td>
+
+          <!-- Col2: Input Name -->
+          <td class="col-name">
+            <input type="text" formControlName="input_name" placeholder="input_name" />
+            <div class="err" *ngIf="row.get('input_name')?.touched && row.get('input_name')?.invalid">
+              <div *ngIf="row.get('input_name')?.errors?.['required']">Input name is required.</div>
+              <div *ngIf="row.get('input_name')?.errors?.['lowercase_underscore_only']">
+                Only lowercase a-z and _ allowed.
+              </div>
+              <div *ngIf="row.get('input_name')?.errors?.['not_unique']">Input name must be unique.</div>
+            </div>
+          </td>
+
+          <!-- Col3: Input type -->
+          <td class="col-type">
+            <bmo-select-box
+              formControlName="input_type"
+              [options]="inputTypeOptions"
+              optionLabel="label"
+              optionValue="value">
+            </bmo-select-box>
+          </td>
+
+          <!-- Col4: Input Value (varies) -->
+          <td class="col-value">
+            <!-- User Field Name -->
+            <ng-container *ngIf="row.get('input_type')?.value === 'User Field Name'">
+              <bmo-select-box
+                formControlName="input_value"
+                [options]="userFieldSelectOptions"
+                optionLabel="label"
+                optionValue="value">
+              </bmo-select-box>
+            </ng-container>
+
+            <!-- List -->
+            <ng-container *ngIf="row.get('input_type')?.value === 'List'">
+              <input
+                type="text"
+                formControlName="input_value"
+                placeholder='e.g. 1,2,3 OR "a","b","c"' />
+              <div class="hint">Will be wrapped as &lt;...&gt; in payload.</div>
+            </ng-container>
+
+            <!-- Literal -->
+            <ng-container *ngIf="row.get('input_type')?.value === 'Literal'">
+              <input type="text" formControlName="input_value" placeholder="e.g. 10 OR &quot;abc&quot;" />
+            </ng-container>
+
+            <!-- SQL -->
+            <ng-container *ngIf="row.get('input_type')?.value === 'SQL'">
+              <textarea
+                formControlName="input_value"
+                rows="4"
+                [class.sql-error]="sqlRowHasError(i)"
+                placeholder="Enter SQL query here"></textarea>
+
+              <div class="sql-actions">
+                <button type="button" (click)="validateSqlRow(i)">Validate query</button>
+                <span class="hint" *ngIf="!sqlRowValidated(i)">Validation required before adding more rows.</span>
+              </div>
+            </ng-container>
+          </td>
+
+          <!-- optional delete -->
+          <td class="col-actions">
+            <button type="button" (click)="removeInputRow(i)" [disabled]="derivationInputs.length === 1">Remove</button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="actions">
+      <button type="button" (click)="addInputRow()" [disabled]="!canAddAnotherInputRow()">
+        Add another input
+      </button>
+    </div>
+  </div>
+
+  <!-- Derivation Formula Container -->
+  <div class="container" *ngIf="form.get('dependency_criteria')?.value">
+    <div class="container-title">Derivation formula</div>
+
+    <!-- messages on top -->
+    <div class="msg" *ngFor="let m of formulaMessages" [class.err]="m.type==='error'" [class.ok]="m.type==='success'">
+      {{ m.text }}
+    </div>
+
+    <table class="no-header-table">
+      <tbody [formGroup]="formulaGroup">
+        <tr>
+          <!-- Col1 -->
+          <td class="col-label">Formula</td>
+
+          <!-- Col2: Formula name -->
+          <td class="col-name">
+            <input type="text" formControlName="formula_name" placeholder="formula_name" />
+            <div class="err" *ngIf="formulaGroup.get('formula_name')?.touched && formulaGroup.get('formula_name')?.invalid">
+              <div *ngIf="formulaGroup.get('formula_name')?.errors?.['required']">Formula name is required.</div>
+              <div *ngIf="formulaGroup.get('formula_name')?.errors?.['lowercase_underscore_only']">
+                Only lowercase a-z and _ allowed.
+              </div>
+              <div *ngIf="formulaGroup.get('formula_name')?.errors?.['not_unique']">Formula name must be unique.</div>
+            </div>
+          </td>
+
+          <!-- Col3: expression -->
+          <td class="col-value">
+            <textarea formControlName="expression" rows="4" placeholder="e.g. (input_a + input_b) / 2"></textarea>
+            <div class="hint">
+              Allowed: parentheses (), operators + - * / % ; variables must match defined input names.
+            </div>
+          </td>
+
+          <!-- Col4: priority -->
+          <td class="col-priority">
+            <input type="number" formControlName="priority" placeholder="1" />
+            <div class="err" *ngIf="formulaGroup.get('priority')?.touched && formulaGroup.get('priority')?.invalid">
+              <div *ngIf="formulaGroup.get('priority')?.errors?.['required']">Priority is required.</div>
+              <div *ngIf="formulaGroup.get('priority')?.errors?.['pattern']">Only numbers allowed.</div>
+            </div>
+          </td>
+
+          <!-- Col5: validate -->
+          <td class="col-actions">
+            <button type="button" (click)="validateFormula()">Validate</button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Save -->
+  <div class="save-row" *ngIf="form.get('dependency_criteria')?.value">
+    <button type="button" (click)="save()">Save</button>
+  </div>
+
+</form>
+
+
+
+
+
+
+/////////// CSS /////////////
+
+.derivation-rule-form {
+  display: block;
+  font-family: inherit;
+}
+
+.top-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.field label {
+  display: block;
+  font-size: 12px;
+  margin-bottom: 6px;
+  opacity: 0.85;
+}
+
+.field input {
+  width: 100%;
+  height: 36px;
+  padding: 6px 10px;
+  border: 1px solid #d0d5dd;
+  border-radius: 6px;
+  outline: none;
+}
+
+.field input:focus {
+  border-color: #98a2b3;
+}
+
+.hint {
+  font-size: 12px;
+  margin-top: 6px;
+  opacity: 0.7;
+}
+
+.container {
+  border: 1px solid #e4e7ec;
+  border-radius: 10px;
+  padding: 12px;
+  margin-top: 14px;
+  background: #fff;
+}
+
+.container-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.no-header-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.no-header-table td {
+  vertical-align: top;
+  padding: 8px 10px;
+  border-top: 1px solid #eef2f6;
+}
+
+.no-header-table tr:first-child td {
+  border-top: none;
+}
+
+.col-label {
+  width: 110px;
+  font-weight: 600;
+  opacity: 0.85;
+  white-space: nowrap;
+}
+
+.col-name {
+  width: 220px;
+}
+
+.col-type {
+  width: 170px;
+}
+
+.col-value {
+  width: auto;
+}
+
+.col-priority {
+  width: 120px;
+}
+
+.col-actions {
+  width: 140px;
+  text-align: right;
+}
+
+textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #d0d5dd;
+  border-radius: 6px;
+  outline: none;
+  resize: vertical;
+}
+
+textarea:focus {
+  border-color: #98a2b3;
+}
+
+.sql-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+button {
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid #d0d5dd;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+
+.save-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+
+.err {
+  color: #d92d20;
+  font-size: 12px;
+  margin-top: 6px;
+}
+
+.msg {
+  font-size: 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+
+.msg.err {
+  background: #ffefee;
+  border: 1px solid #fecdca;
+  color: #b42318;
+}
+
+.msg.ok {
+  background: #ecfdf3;
+  border: 1px solid #abefc6;
+  color: #067647;
+}
+
+.sql-error {
+  border-color: #d92d20 !important;
+  color: #d92d20;
+}
