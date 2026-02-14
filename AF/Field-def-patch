@@ -1,0 +1,38 @@
+private uniqueUiFieldValidator(getRows: () => FormArray): ValidatorFn {
+  return (control: AbstractControl) => {
+    const value = (control.value ?? '').toString().trim();
+    if (!value) return null;
+
+    const rows = getRows();
+    // find current row by parent reference (no fg variable needed)
+    const currentRow = control.parent as FormGroup | null;
+
+    let count = 0;
+    rows.controls.forEach(r => {
+      const row = r as FormGroup;
+      const v = (row.get('system_field_name')?.value ?? '').toString().trim();
+      if (!v) return;
+
+      // ignore current row
+      if (currentRow && row === currentRow) return;
+
+      if (v.toLowerCase() === value.toLowerCase()) count++;
+    });
+
+    return count > 0 ? { notUnique: true } : null;
+  };
+}
+
+
+
+
+system_field_name: new FormControl(initial.system_field_name, {
+  validators: [
+    Validators.required,
+    Validators.minLength(5),
+    Validators.maxLength(50),
+    Validators.pattern(/^[A-Za-z ]+$/),
+    this.uniqueUiFieldValidator(() => this.rows),
+  ],
+  nonNullable: false,
+}),
