@@ -1,0 +1,70 @@
+private createRow(meta: MetaObj, existing: ExistingUserObj | null): FormGroup {
+  const initial = {
+    system_field_name: existing?.system_field_name ?? null,
+    form_field: existing?.form_field ?? null,
+    field_category: existing?.field_category ?? null,
+    field_requirement: existing?.field_requirement ?? null,
+    dependent_field: existing?.dependent_field ?? null,
+    field_default_value: existing?.field_default_value ?? null,
+    field_editable: existing?.field_editable ?? null,
+    field_validation_rule_exists: existing?.field_validation_rule_exists ?? null,
+    field_derivation_rule_exists: existing?.field_derivation_rule_exists ?? null,
+    field_allowed_values: existing?.field_allowed_values ?? null,
+    field_standard_values: existing?.field_standard_values ?? null,
+    field_position_in_template: existing?.field_position_in_template ?? null,
+  };
+
+  // ✅ FIRST create group (EMPTY)
+  const fg = this.fb.group({});
+
+  // ✅ THEN add readonly metadata controls
+  fg.addControl('ordinal_position', new FormControl({ value: meta.ordinal_position ?? null, disabled: true }));
+  fg.addControl('is_nullable', new FormControl({ value: meta.is_nullable ?? null, disabled: true }));
+  fg.addControl('data_type', new FormControl({ value: meta.data_type ?? null, disabled: true }));
+  fg.addControl('character_maximum_length', new FormControl({ value: meta.character_maximum_length ?? null, disabled: true }));
+  fg.addControl('numeric_precision', new FormControl({ value: meta.numeric_precision ?? null, disabled: true }));
+  fg.addControl('numeric_scale', new FormControl({ value: meta.numeric_scale ?? null, disabled: true }));
+  fg.addControl('column_name', new FormControl({ value: meta.column_name ?? null, disabled: true }));
+  fg.addControl('table_name', new FormControl({ value: meta.table_name ?? null, disabled: true }));
+  fg.addControl('is_key_mapped', new FormControl({ value: meta.is_key_mapped ?? null, disabled: true }));
+
+  // ✅ THEN add user editable fields
+  fg.addControl(
+    'system_field_name',
+    new FormControl(initial.system_field_name, [
+      Validators.required,
+      Validators.minLength(5),
+      Validators.maxLength(50),
+      Validators.pattern(/^[A-Za-z_]+$/),
+      this.uniqueUiFieldValidator(() => this.rows, () => fg),
+    ])
+  );
+
+  fg.addControl('form_field', new FormControl(initial.form_field, [Validators.required]));
+  fg.addControl('field_category', new FormControl(initial.field_category, [Validators.required]));
+  fg.addControl('field_requirement', new FormControl(initial.field_requirement, [Validators.required]));
+  fg.addControl('dependent_field', new FormControl(initial.dependent_field));
+
+  fg.addControl(
+    'field_default_value',
+    new FormControl(initial.field_default_value, [
+      this.defaultValueValidator(() => fg),
+    ])
+  );
+
+  fg.addControl('field_editable', new FormControl(initial.field_editable, [Validators.required]));
+  fg.addControl('field_validation_rule_exists', new FormControl(initial.field_validation_rule_exists, [Validators.required]));
+  fg.addControl('field_derivation_rule_exists', new FormControl(initial.field_derivation_rule_exists, [Validators.required]));
+  fg.addControl('field_allowed_values', new FormControl(initial.field_allowed_values, [Validators.required]));
+
+  fg.addControl(
+    'field_standard_values',
+    new FormControl(initial.field_standard_values, [
+      this.standardValuesValidator(() => fg),
+    ])
+  );
+
+  fg.addControl('field_position_in_template', new FormControl(initial.field_position_in_template, [Validators.required]));
+
+  return fg;
+}
