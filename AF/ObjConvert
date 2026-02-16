@@ -1,0 +1,23 @@
+convertTableObjectToArray(apiResponse: any): any[] {
+  if (!apiResponse || typeof apiResponse !== 'object') {
+    return [];
+  }
+
+  // Get first key (table name)
+  const tableName = Object.keys(apiResponse)[0];
+
+  if (!tableName) {
+    return [];
+  }
+
+  const tableObj = apiResponse[tableName];
+
+  if (!tableObj || typeof tableObj !== 'object') {
+    return [];
+  }
+
+  // Convert column objects into array
+  return Object.keys(tableObj).map((columnKey) => {
+    return tableObj[columnKey];
+  });
+}
