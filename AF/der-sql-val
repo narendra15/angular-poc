@@ -1,0 +1,52 @@
+validateSqlRow(index: number): void {
+  // clear top message first
+  this.sqlGlobalErrorMsg = '';
+  this.derivationInputMessages = [];
+
+  const row = this.derivationInputs.at(index) as FormGroup;
+  const type = row.get('input_type')!.value as InputType | null;
+
+  if (type !== this.INPUT_TYPE_SQL) return;
+
+  const sql = (row.get('input_value')!.value || '').toString().trim();
+
+  if (!sql) {
+    row.patchValue({ sql_validated: false, sql_error: 'SQL query cannot be empty.' }, { emitEvent: false });
+    this.sqlGlobalErrorMsg = 'SQL query cannot be empty.';
+    this.derivationInputMessages = [{ type: 'error', text: this.sqlGlobalErrorMsg }];
+    return;
+  }
+
+  // Payload EXACTLY like your validation rules component style
+  const payload = {
+    sql_query: sql,
+    entity_name: this.selectedEntityName || '',
+    adj_type_name: this.selectedAdjName || '',
+    user_field_names: [], // keep same as validation rules (or pass actual names if needed)
+  };
+
+  console.log('sql payload', payload);
+
+  this._apiService.postData(payload, 'rules/validate-sql').subscribe({
+    next: (resp: any) => {
+      const ok = !!resp?.data?.is_valid;
+
+      if (ok) {
+        row.patchValue({ sql_validated: true, sql_error: null }, { emitEvent: false });
+        this.sqlGlobalErrorMsg = '';
+        this.derivationInputMessages = [{ type: 'success', text: 'SQL validated successfully.' }];
+      } else {
+        const msg = resp?.data?.message || 'SQL validation failed.';
+        row.patchValue({ sql_validated: false, sql_error: msg }, { emitEvent: false });
+        this.sqlGlobalErrorMsg = msg;
+        this.derivationInputMessages = [{ type: 'error', text: msg }];
+      }
+    },
+    error: (err: any) => {
+      console.error('validate-sql error', err);
+      row.patchValue({ sql_validated: false, sql_error: 'SQL validation failed.' }, { emitEvent: false });
+      this.sqlGlobalErrorMsg = 'SQL validation failed.';
+      this.derivationInputMessages = [{ type: 'error', text: this.sqlGlobalErrorMsg }];
+    },
+  });
+}
