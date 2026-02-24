@@ -1,0 +1,325 @@
+import { Component, OnInit, Output, EventEmitter } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule, FormControl } from '@angular/forms';
+
+import { MatTableModule } from '@angular/material/table';
+import { MatButtonModule } from '@angular/material/button';
+import { MatTooltipModule } from '@angular/material/tooltip';
+
+import { forkJoin, of } from 'rxjs';
+import { catchError, map } from 'rxjs/operators';
+
+// ✅ use your real service import
+// import { AdminApiService } from '...';
+
+export type Option = { value: string; label: string };
+
+type MetadataResp = {
+  status: boolean;
+  message: string;
+  data: any[];
+};
+
+interface GridColumn {
+  columnKey: string;
+  header: string;
+  options: Option[]; // ✅ now Option[]
+  tooltip: string;
+  meta: {
+    targetDatabaseType: string;
+    targetDatabase: string; // database_name
+    targetSchema: string;   // schema_name
+    targetTable: string;    // table_name
+    targetTableType: string;
+  };
+}
+
+interface KeyColumnRow {
+  index: number;
+  isDraft: boolean;
+  values: Record<string, string>; // columnKey -> selected value
+  controls: Record<string, FormControl>;
+  errors?: Record<string, string>;
+}
+
+@Component({
+  selector: 'app-add-key-column',
+  standalone: true,
+  templateUrl: './add-key-column.component.html',
+  imports: [
+    CommonModule,
+    FormsModule,
+    MatTableModule,
+    MatButtonModule,
+    MatTooltipModule
+  ]
+})
+export class AddKeyColumnComponent implements OnInit {
+  @Output() saveKeyColumns = new EventEmitter<any[][]>();
+
+  columns: GridColumn[] = [];
+  rows: KeyColumnRow[] = [];
+  displayedColumns: string[] = [];
+
+  maxRows = 10;
+  isLoading = true;
+
+  isOptionsLoading = true;
+  private optionsCache = new Map<string, Option[]>(); // columnKey -> Option[]
+
+  constructor(private _apiService: any /* AdminApiService */) {}
+
+  ngOnInit(): void {
+    this.loadData();
+  }
+
+  /* ---------------- LOAD (replace with your actual API calls) ---------------- */
+  loadData(): void {
+    /**
+     * Replace these with your real APIs:
+     * - gridData should be the gridData endpoint that returns target table instances
+     * - existingMappings should be existing key-mapping endpoint (grouped by key_mapping_id)
+     */
+    const gridData: any[] = [];        // TODO: plug real gridData
+    const existingMappings: any[] = []; // TODO: plug real existing mappings
+
+    this.columns = this.buildColumns(gridData);
+    this.rows = this.buildExistingRows(existingMappings);
+
+    this.displayedColumns = [
+      'mapping',
+      ...this.columns.map(c => c.columnKey),
+      'actions'
+    ];
+
+    // Load dropdown options for each column (target table)
+    this.loadAllColumnOptions();
+
+    this.isLoading = false;
+  }
+
+  /* ---------------- BUILD COLUMNS (from gridData) ---------------- */
+  buildColumns(data: any[]): GridColumn[] {
+    return data.map(item => {
+      const columnKey = [
+        item.target_database_type,
+        item.target_database,
+        item.target_schema,
+        item.target_table
+      ].join('|');
+
+      return {
+        columnKey,
+        header: item.target_table,
+        options: [],
+        tooltip: `Database: ${item.target_database}\nSchema: ${item.target_schema}`,
+        meta: {
+          targetDatabaseType: item.target_database_type,
+          targetDatabase: item.target_database,
+          targetSchema: item.target_schema,
+          targetTable: item.target_table,
+          targetTableType: item.target_table_type
+        }
+      };
+    });
+  }
+
+  /* ---------------- EXISTING ROWS (group by key_mapping_id) ---------------- */
+  buildExistingRows(data: any[]): KeyColumnRow[] {
+    const map = new Map<string, KeyColumnRow>();
+
+    data.forEach(item => {
+      const rowId = item.key_mapping_id;
+
+      const columnKey = [
+        item.target_database_type,
+        item.target_database,
+        item.target_schema,
+        item.target_table
+      ].join('|');
+
+      if (!map.has(rowId)) {
+        map.set(rowId, {
+          index: map.size + 1,
+          isDraft: false,
+          values: {},
+          controls: {},
+          errors: {}
+        });
+      }
+
+      map.get(rowId)!.values[columnKey] = item.target_table_key_column;
+    });
+
+    return Array.from(map.values());
+  }
+
+  /* ---------------- OPTIONS API (type=column) ---------------- */
+  private loadAllColumnOptions(): void {
+    if (!this.columns.length) {
+      this.isOptionsLoading = false;
+
+      // still show 1 draft row if nothing exists
+      if (!this.rows.length) this.addDraftRow();
+      return;
+    }
+
+    this.isOptionsLoading = true;
+
+    const calls = this.columns.map(col => {
+      // cache hit
+      const cached = this.optionsCache.get(col.columnKey);
+      if (cached) return of(cached);
+
+      const db = col.meta.targetDatabase;
+      const schema = col.meta.targetSchema;
+      const table = col.meta.targetTable;
+
+      return this._apiService
+        .getData(
+          `target-table/metadata?database_name=${db}&schema_name=${schema}&table_name=${table}&type=column`
+        )
+        .pipe(
+          map((resp: MetadataResp) => this.mapColumnOptions(resp)),
+          catchError(() => of([] as Option[]))
+        );
+    });
+
+    forkJoin(calls).subscribe((results: Option[][]) => {
+      results.forEach((opts, idx) => {
+        const col = this.columns[idx];
+        this.optionsCache.set(col.columnKey, opts);
+        col.options = opts;
+      });
+
+      // force refresh for mat-table rendering
+      this.columns = [...this.columns];
+      this.rows = [...this.rows];
+
+      this.isOptionsLoading = false;
+
+      // Auto-create first draft row if no existing rows
+      if (!this.rows.length) this.addDraftRow();
+    });
+  }
+
+  private mapColumnOptions(resp: MetadataResp): Option[] {
+    const rows = resp?.data ?? [];
+    return rows
+      .map(r => r?.name)
+      .filter((v): v is string => !!v)
+      .map(v => ({ value: v, label: v }));
+  }
+
+  /* ---------------- ADD / CANCEL ---------------- */
+  addDraftRow(): void {
+    if (this.isAddAnotherDisabled) return;
+
+    const controls: Record<string, FormControl> = {};
+    this.columns.forEach(col => {
+      controls[col.columnKey] = new FormControl(null);
+    });
+
+    const newRow: KeyColumnRow = {
+      index: this.rows.length + 1,
+      isDraft: true,
+      values: {},
+      controls,
+      errors: {}
+    };
+
+    this.rows = [...this.rows, newRow];
+  }
+
+  cancelRow(rowIndex: number): void {
+    this.rows = this.rows
+      .filter(r => r.index !== rowIndex)
+      .map((r, i) => ({ ...r, index: i + 1 }));
+  }
+
+  /* ---------------- FILTER OPTIONS (hide already used values) ---------------- */
+  private getUsedValuesForColumn(columnKey: string, currentRow: KeyColumnRow): string[] {
+    return this.rows
+      .filter(r => r !== currentRow)
+      .map(r => r.values[columnKey])
+      .filter((v): v is string => !!v);
+  }
+
+  getAvailableOptions(columnKey: string, currentRow: KeyColumnRow, baseOptions: Option[]): Option[] {
+    const used = new Set(this.getUsedValuesForColumn(columnKey, currentRow));
+    const current = currentRow.values[columnKey];
+    return baseOptions.filter(opt => !used.has(opt.value) || opt.value === current);
+  }
+
+  /* ---------------- SELECTION (safety net – block duplicates) ---------------- */
+  onSelectionChange(row: KeyColumnRow, columnKey: string, value: string): void {
+    const usedValues = this.getUsedValuesForColumn(columnKey, row);
+
+    if (usedValues.includes(value)) {
+      row.controls[columnKey].setValue(null, { emitEvent: false });
+      delete row.values[columnKey];
+      row.errors![columnKey] = 'This key column is already selected in another row';
+      return;
+    }
+
+    delete row.errors?.[columnKey];
+    row.values[columnKey] = value;
+  }
+
+  /* ---------------- SAVE (emit only key_columns) ---------------- */
+  saveAll(): void {
+    const payload = this.buildKeyColumnsPayload();
+    if (!payload.length) return;
+
+    this.saveKeyColumns.emit(payload);
+
+    // mark drafts as saved (read-only)
+    this.rows = this.rows.map(r => (r.isDraft ? { ...r, isDraft: false } : r));
+  }
+
+  buildKeyColumnsPayload(): any[][] {
+    return this.rows
+      .filter(r => r.isDraft)
+      .map(row =>
+        Object.entries(row.values).map(([columnKey, value]) => {
+          const col = this.columns.find(c => c.columnKey === columnKey)!;
+
+          return {
+            target_database_type: col.meta.targetDatabaseType,
+            target_database: col.meta.targetDatabase,
+            target_schema: col.meta.targetSchema,
+            target_table: col.meta.targetTable,
+            target_table_type: col.meta.targetTableType,
+            target_table_key_column: value
+          };
+        })
+      );
+  }
+
+  /* ---------------- UI HELPERS ---------------- */
+  get hasDraftRows(): boolean {
+    return this.rows.some(r => r.isDraft);
+  }
+
+  get isSaveDisabled(): boolean {
+    return this.rows
+      .filter(r => r.isDraft)
+      .some(r => this.columns.some(c => !r.values[c.columnKey]));
+  }
+
+  get isAddAnotherDisabled(): boolean {
+    if (this.isOptionsLoading) return true;
+    if (this.rows.length >= this.maxRows) return true;
+    if (!this.columns.length) return true;
+
+    // disable if any column has no remaining options (based on used values across ALL rows)
+    return this.columns.some(col => {
+      const used = new Set(
+        this.rows.map(r => r.values[col.columnKey]).filter((v): v is string => !!v)
+      );
+
+      const remaining = col.options.filter(opt => !used.has(opt.value));
+      return remaining.length === 0;
+    });
+  }
+}
