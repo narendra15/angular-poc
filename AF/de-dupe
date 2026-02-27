@@ -1,0 +1,21 @@
+private deduplicateMetaData(adjFields: any): any {
+  const deduplicated: any = {};
+  
+  Object.entries(adjFields).forEach(([tableName, colsObj]: [string, any]) => {
+    const seenColumns = new Set<string>();
+    deduplicated[tableName] = {};
+    
+    Object.entries(colsObj).forEach(([columnName, meta]) => {
+      // Split comma-separated column names and check each
+      const columnNames = columnName.split(',').map(c => c.trim());
+      const isDuplicate = columnNames.some(cn => seenColumns.has(cn));
+      
+      if (!isDuplicate) {
+        columnNames.forEach(cn => seenColumns.add(cn));
+        deduplicated[tableName][columnName] = meta;
+      }
+    });
+  });
+  
+  return deduplicated;
+}
